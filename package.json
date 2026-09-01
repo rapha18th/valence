@@ -13,7 +13,7 @@
   "dependencies": {
     "@fontsource/inter": "^5.1.0",
     "@fontsource/jetbrains-mono": "^5.1.1",
-    "@mcp-b/global": "^1.0.0",
+    "@mcp-b/global": "^5.1.0",
     "3dmol": "^2.4.2",
     "smiles-drawer": "^2.1.7",
     "zod": "^4.5.4",

@@ -4,12 +4,12 @@
 
 import {
   note, setSelection, setProps, setSdf3d, setHazard, setSimilars, setViability,
-  setBio, setCandidates, resetCanvas, setStatus, activity, getState,
+  setBio, setUses, setCandidates, resetCanvas, setStatus, activity, getState,
 } from "../store/store.ts";
 import { ep } from "../pubchem/endpoints.ts";
 import {
   resolveCids, getProperties, getOneProperty, get3dSdf, getHazard,
-  similaritySearch, getViability, getBio, greenScore, type ResolveBy,
+  similaritySearch, getViability, getBio, getUses, greenScore, type ResolveBy,
 } from "../pubchem/parse.ts";
 import { BY_SYMBOL } from "../data/elements.ts";
 import { GLOSSARY } from "../data/glossary.ts";
@@ -63,7 +63,7 @@ export async function combineSelection(
   if (!props) return err(`Found CID ${cid} but no property record.`);
   formula = props.formula || formula;
   setProps(props);
-  setSdf3d(null); setHazard(null); setSimilars([]); setCandidates(null); setViability(null); setBio(null);
+  setSdf3d(null); setHazard(null); setSimilars([]); setCandidates(null); setViability(null); setBio(null); setUses(null);
   activity({ kind: "note", label: `combined → ${props.name}` });
   note(actor, "Combined selection", `${sel.join(" + ")} → ${props.name} (${formula})`,
     { label: `CID ${cid}`, url: ep.page(cid) });
@@ -81,7 +81,7 @@ export async function searchPubchem(query: string, by: ResolveBy, actor: Actor):
     { label: `CID ${cids[0]}`, url: ep.page(cids[0]) });
   if (props[0]) {
     setProps(props[0]); setSdf3d(null);
-    setHazard(null); setSimilars([]); setCandidates(null); setViability(null); setBio(null);
+    setHazard(null); setSimilars([]); setCandidates(null); setViability(null); setBio(null); setUses(null);
   }
   const lines = props.map((p) => `${p.cid} ${p.name} (${p.formula})`).join("; ");
   return ok(`Top matches: ${lines || cids.slice(0, 5).join(", ")}.`, props);
@@ -161,6 +161,22 @@ export async function industrialViability(cid: number, actor: Actor): Promise<Re
   return ok(`Vendors: ${v.vendorCount ?? "unknown"}, patent references: ${v.patentCount ?? "unknown"}. ${v.verdict}`, v);
 }
 
+// ---------- industrial / consumer uses ----------
+export async function industrialUses(cid: number, actor: Actor): Promise<Res> {
+  setStatus("Reading PubChem Uses annotations…");
+  const uses = await getUses(cid);
+  setUses(uses.length ? uses : null);
+  if (!uses.length) {
+    note(actor, "Industrial uses", "No Uses annotations on file for this compound.",
+      { label: `CID ${cid}`, url: ep.page(cid) });
+    return ok("No Uses annotations on file for this compound.");
+  }
+  note(actor, "Industrial uses", uses.slice(0, 4).join(" · "),
+    { label: `CID ${cid}`, url: ep.page(cid) });
+  setStatus(`${uses.length} documented uses.`);
+  return ok("Documented uses: " + uses.join("; "), uses);
+}
+
 // ---------- bioactivity ----------
 export async function bioactivityBridge(cid: number, actor: Actor): Promise<Res> {
   setStatus("Reading bioassay summary…");
@@ -188,6 +204,8 @@ export function getCanvasState(): Res {
     properties: s.props,
     hazard: s.hazard && { severity: s.hazard.severity, signal: s.hazard.signal, pictograms: s.hazard.pictograms },
     similars: s.similars.map((h) => ({ cid: h.cid, name: h.name, greenScore: h.greenScore })),
+    uses: s.uses,
+    viability: s.viability,
     candidates: s.candidates,
     notebook: s.notebook.slice(0, 12).map((e) => ({ actor: e.actor, action: e.action, detail: e.detail, cite: e.citation?.url })),
   };

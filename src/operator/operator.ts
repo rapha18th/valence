@@ -1,17 +1,43 @@
 // The built-in operator. Not an LLM. It reads the command-bar text, picks a
-// tool chain, and runs it through navigator.modelContext.callTool — the exact
-// path an external agent (ChatGPT, Chrome) uses. Judges can also drive the
-// same tools from their own agent and see identical behaviour.
+// tool chain, and runs the same tool executes an external agent (ChatGPT,
+// Codex, Chrome) invokes through document.modelContext. Identical behaviour.
 
 import { getState, setStatus, note, activity } from "../store/store.ts";
 import { BY_SYMBOL } from "../data/elements.ts";
 import { toast } from "../ui/toasts.ts";
+import { TOOL_EXEC } from "../webmcp/register.ts";
 
-async function call(name: string, args: Record<string, unknown> = {}) {
-  const mc = navigator.modelContext;
-  if (!mc) throw new Error("WebMCP not ready");
-  const r = await mc.callTool({ name, arguments: args });
+async function call(name: string, args: Record<string, unknown> = {}): Promise<string> {
+  // prefer the Chromium executeTool path when the runtime offers it
+  const doc = (document as any).modelContext;
+  if (doc?.executeTool && doc?.getTools) {
+    try {
+      const tools = await doc.getTools();
+      const descr = tools.find((t: any) => t.name === name);
+      if (descr) {
+        const out = await doc.executeTool(descr, JSON.stringify(args));
+        const parsed = out == null ? null : JSON.parse(out);
+        return parsed?.content?.[0]?.text ?? "";
+      }
+    } catch { /* fall through to local exec */ }
+  }
+  const exec = TOOL_EXEC.get(name);
+  if (!exec) throw new Error(`unknown tool ${name}`);
+  const r = await exec(args);
   return r.content?.[0]?.text ?? "";
+}
+
+// element-symbol + count formula, e.g. "CO2", "H2SO4", "C6H12O6"
+function parseFormula(s: string): Record<string, number> | null {
+  const tokens = s.match(/([A-Z][a-z]?)(\d*)/g);
+  if (!tokens || tokens.join("") !== s) return null;
+  const out: Record<string, number> = {};
+  for (const tok of tokens) {
+    const m = /([A-Z][a-z]?)(\d*)/.exec(tok)!;
+    if (!BY_SYMBOL[m[1]]) return null;
+    out[m[1]] = (out[m[1]] ?? 0) + (m[2] ? parseInt(m[2], 10) : 1);
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 export async function runOperator(text: string) {
@@ -56,32 +82,46 @@ export async function runOperator(text: string) {
       return await call("explain", { topic });
     }
 
-    // ---- combine named elements / make X ----
-    const makeM = t.match(/\b(make|combine|build|assemble)\b\s+(.+)/i);
-    if (makeM) {
-      const rest = makeM[2].replace(/[?.]+$/, "").trim();
-      // element tokens: capitalised symbols, optionally with a count
-      const named: Record<string, number> = {};
-      let explicitCounts = false;
-      for (const m of rest.matchAll(/(\d+)?\s*([A-Z][a-z]?)(?![a-z])/g)) {
-        if (BY_SYMBOL[m[2]]) {
-          if (m[1]) explicitCounts = true;
-          named[m[2]] = (named[m[2]] ?? 0) + (m[1] ? Number(m[1]) : 1);
-        }
-      }
-      const looksElemental = Object.keys(named).length >= 1 &&
-        rest.replace(/[\dA-Za-z\s,+]/g, "").length === 0 &&
-        rest.split(/[\s,+]+/).every((w) => !w || BY_SYMBOL[cap(w)] || /^\d+$/.test(w));
+    // ---- uses ----
+    if (/what.*(used for|use of|application)|industrial use|consumer use/.test(low)) {
+      const cid = getState().props?.cid;
+      if (!cid) return say("Load a compound first, then ask what it is used for.");
+      return await call("industrial_uses", { cid });
+    }
 
-      if (looksElemental) {
-        await call("select_elements", { symbols: Object.keys(named) });
-        const out = await call("combine_selection", explicitCounts ? { stoichiometry: named } : {});
+    // ---- combine named elements / make X / make CO2 ----
+    const makeM = t.match(/\b(make|combine|build|assemble|show me|render)\b\s+(.+)/i);
+    if (makeM) {
+      const rest = makeM[2].replace(/[?.!]+$/, "").trim();
+
+      // a bare chemical formula like "CO2", "H2O", "C6H12O6"
+      const oneToken = rest.split(/\s+/).length === 1 ? rest : "";
+      const formula = oneToken ? parseFormula(oneToken) : null;
+      if (formula) {
+        await call("select_elements", { symbols: Object.keys(formula) });
+        let out = await call("combine_selection", { stoichiometry: formula });
+        if (!getState().props) out = await call("search_pubchem", { query: oneToken, by: "formula" });
         const cid = getState().props?.cid;
         if (cid) { await call("fetch_3d_conformer", { cid }); await call("assess_hazard_profile", { cid }); }
         return out;
       }
-      // otherwise treat it as a compound name
-      const out = await call("search_pubchem", { query: rest, by: "name" });
+
+      // a space/plus separated element list like "H O" or "Na + Cl"
+      const parts = rest.split(/[\s,+]+/).filter(Boolean);
+      const asSyms = parts.map(cap);
+      if (asSyms.length >= 1 && asSyms.every((w) => BY_SYMBOL[w])) {
+        await call("select_elements", { symbols: asSyms });
+        const out = await call("combine_selection", {});
+        const cid = getState().props?.cid;
+        if (cid) { await call("fetch_3d_conformer", { cid }); await call("assess_hazard_profile", { cid }); }
+        return out;
+      }
+
+      // otherwise treat it as a compound name; fall back to a formula search
+      let out = await call("search_pubchem", { query: rest, by: "name" });
+      if (!getState().props && /^[A-Za-z0-9()]+$/.test(rest)) {
+        out = await call("search_pubchem", { query: rest, by: "formula" });
+      }
       const cid = getState().props?.cid;
       if (cid) { await call("fetch_3d_conformer", { cid }); await call("assess_hazard_profile", { cid }); }
       return out;
@@ -109,7 +149,7 @@ export async function runOperator(text: string) {
       return out;
     }
 
-    return say(`I can: build to constraints, find greener alternatives, combine elements, fetch 3D, assess hazard, check sourcing, explain a concept. Your own agent can call any of the ${navigator.modelContext?.listTools().length ?? 16} tools directly.`);
+    return say("I can: build to constraints, find greener alternatives, combine elements, make a compound by name or formula, fetch 3D, assess hazard, check sourcing and uses, explain a concept. Your own agent can call any of the 17 tools on document.modelContext directly.");
   } catch (e) {
     activity({ kind: "done", label: "Agent: hit an error." });
     setStatus("Agent: error — see console.");

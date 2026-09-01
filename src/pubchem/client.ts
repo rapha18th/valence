@@ -71,26 +71,39 @@ async function raw(url: string, accept: string): Promise<string> {
   const cached = cacheGet(url);
   if (cached !== null) return cached;
   return enqueue(async () => {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-    try {
-      const res = await fetch(url, { headers: { Accept: accept }, signal: ctrl.signal });
-      if (res.status === 404) {
-        cacheSet(url, "");
-        return "";
+    // PubChem returns 503 / 429 under load; back off and retry a couple times.
+    for (let attempt = 0; ; attempt++) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+      try {
+        const res = await fetch(url, { headers: { Accept: accept }, signal: ctrl.signal });
+        if (res.status === 404) { cacheSet(url, ""); return ""; }
+        if ((res.status === 503 || res.status === 429 || res.status === 500) && attempt < 3) {
+          await sleep(500 * (attempt + 1));
+          continue;
+        }
+        if (!res.ok) throw new Error(`PubChem ${res.status} for ${url}`);
+        const body = await res.text();
+        cacheSet(url, body);
+        return body;
+      } catch (e) {
+        if (attempt < 3 && (e as Error)?.name === "AbortError") { await sleep(400); continue; }
+        throw e;
+      } finally {
+        clearTimeout(t);
       }
-      if (!res.ok) throw new Error(`PubChem ${res.status} for ${url}`);
-      const body = await res.text();
-      cacheSet(url, body);
-      return body;
-    } finally {
-      clearTimeout(t);
     }
   });
 }
 
 export async function getJSON<T = any>(url: string): Promise<T | null> {
-  const body = await raw(url, "application/json");
+  let body: string;
+  try {
+    body = await raw(url, "application/json");
+  } catch (e) {
+    console.warn("PubChem request failed", e);
+    return null;
+  }
   if (!body) return null;
   try {
     return JSON.parse(body) as T;
@@ -100,7 +113,12 @@ export async function getJSON<T = any>(url: string): Promise<T | null> {
 }
 
 export async function getText(url: string): Promise<string> {
-  return raw(url, "chemical/x-mdl-sdfile, text/plain, */*");
+  try {
+    return await raw(url, "chemical/x-mdl-sdfile, text/plain, */*");
+  } catch (e) {
+    console.warn("PubChem request failed", e);
+    return "";
+  }
 }
 
 export function clearPubchemCache() {

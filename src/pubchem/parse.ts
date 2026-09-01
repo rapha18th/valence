@@ -3,6 +3,7 @@
 
 import { ep } from "./endpoints.ts";
 import { getJSON, getText } from "./client.ts";
+import { fallbackFind, fallbackByCid } from "../data/fallback.ts";
 import type {
   MoleculeProps, HazardProfile, HazardPictogram, HazardSeverity, SimilarHit,
   ViabilityReport, BioReport,
@@ -21,7 +22,14 @@ export async function resolveCids(query: string, by: ResolveBy): Promise<number[
     : by === "inchikey" ? ep.cidsByInchiKey(query)
     : ep.cidsByFormula(query);
   const json = await getJSON<{ IdentifierList?: { CID?: number[] } }>(url);
-  return json?.IdentifierList?.CID ?? [];
+  const cids = json?.IdentifierList?.CID ?? [];
+  if (cids.length) return cids;
+  // PubChem unreachable or no hit: fall back to the bundled common set
+  if (by === "name" || by === "formula") {
+    const f = fallbackFind(query);
+    if (f) return [f.cid];
+  }
+  return [];
 }
 
 // ---- properties ----
@@ -68,12 +76,17 @@ export async function getProperties(cids: number[]): Promise<MoleculeProps[]> {
   const json = await getJSON<{ PropertyTable?: { Properties?: RawProp[] } }>(
     ep.properties(cids.slice(0, 50)),
   );
-  return (json?.PropertyTable?.Properties ?? []).map(toProps);
+  const live = (json?.PropertyTable?.Properties ?? []).map(toProps);
+  if (live.length) return live;
+  // PubChem unreachable: return whatever the bundled set covers
+  const out: MoleculeProps[] = [];
+  for (const c of cids) { const f = fallbackByCid(c); if (f) out.push(f); }
+  return out;
 }
 
 export async function getOneProperty(cid: number): Promise<MoleculeProps | null> {
   const list = await getProperties([cid]);
-  return list[0] ?? null;
+  return list[0] ?? fallbackByCid(cid) ?? null;
 }
 
 // ---- 3D / 2D structure ----
@@ -283,6 +296,24 @@ function viabilityVerdict(vendors: number | null, patents: number | null): strin
   else parts.push(`patent-dense (${patents}+ references)`);
 
   return parts.join("; ") + ".";
+}
+
+// ---- industrial / consumer uses ----
+
+export async function getUses(cid: number): Promise<string[]> {
+  const json = await getJSON<{ Record?: { Section?: PugSection[] } }>(ep.uses(cid));
+  const sec = walk(json?.Record?.Section, "Uses");
+  if (!sec) return [];
+  const out: string[] = [];
+  const collect = (s: PugSection) => {
+    for (const line of stringsOf(s)) {
+      const clean = line.replace(/\s+/g, " ").trim();
+      if (clean && clean.length < 220 && !out.includes(clean)) out.push(clean);
+    }
+    for (const sub of s.Section ?? []) collect(sub);
+  };
+  collect(sec);
+  return out.slice(0, 8);
 }
 
 // ---- bioactivity ----

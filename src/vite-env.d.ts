@@ -7,7 +7,7 @@ interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
 
-// Minimal ambient shape for the WebMCP polyfill surface we use.
+// Ambient shape for the WebMCP surface (document.modelContext) we target.
 interface WebMcpTool {
   name: string;
   description: string;
@@ -16,14 +16,15 @@ interface WebMcpTool {
   execute: (args: any) => Promise<{ content: { type: "text"; text: string }[]; isError?: boolean }>;
 }
 interface WebMcpModelContext {
-  provideContext(opts: { tools: WebMcpTool[] }): void;
-  registerTool(tool: WebMcpTool): void;
-  unregisterTool(name: string): void;
-  listTools(): { name: string; description: string; inputSchema?: unknown }[];
-  callTool(params: { name: string; arguments?: Record<string, unknown> }): Promise<{
-    content: { type: "text"; text: string }[];
-    isError?: boolean;
-  }>;
+  registerTool(tool: WebMcpTool, options?: { signal?: AbortSignal }): Promise<void>;
+  unregisterTool?(name: string): void;
+  getTools?(): Promise<{ name: string; inputSchema?: string }[]>;
+  listTools?(): unknown[];
+  executeTool?(tool: unknown, inputArgsJson: string): Promise<string | null>;
+  provideContext?(opts: { tools: WebMcpTool[] }): void;
+}
+interface Document {
+  modelContext?: WebMcpModelContext;
 }
 interface Navigator {
   modelContext?: WebMcpModelContext;

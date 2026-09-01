@@ -137,6 +137,7 @@ export interface State {
   similars: SimilarHit[];
   viability: ViabilityReport | null;
   bio: BioReport | null;
+  uses: string[] | null;
   candidates: CandidateScore[] | null;
 
   notebook: NotebookEntry[];
