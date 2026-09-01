@@ -27,8 +27,9 @@ function blip(freq: number, dur: number, gain: number, type: OscillatorType = "s
 }
 
 export const sfx = {
-  key: () => blip(420, 0.06, 0.04, "square"),
-  select: () => blip(660, 0.09, 0.05, "triangle"),
-  confirm: () => { blip(523.25, 0.12, 0.05); setTimeout(() => blip(784, 0.16, 0.045), 90); },
-  agent: () => blip(300, 0.05, 0.03, "sawtooth"),
+  key: () => blip(420, 0.055, 0.035, "square"),
+  select: () => { blip(587.33, 0.05, 0.04, "triangle"); setTimeout(() => blip(880, 0.08, 0.035, "triangle"), 40); },
+  confirm: () => { blip(523.25, 0.11, 0.05); setTimeout(() => blip(659.25, 0.11, 0.045), 80); setTimeout(() => blip(783.99, 0.18, 0.04), 160); },
+  no: () => { blip(300, 0.09, 0.045, "sawtooth"); setTimeout(() => blip(196, 0.16, 0.04, "sawtooth"), 70); },
+  agent: () => blip(300, 0.045, 0.028, "sawtooth"),
 };

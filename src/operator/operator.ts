@@ -76,9 +76,21 @@ export async function runOperator(text: string) {
       return out;
     }
 
+    // ---- bond check: "will Na and Cl bond", "does helium react with oxygen" ----
+    if (/\b(bond|react|combine|join)\b/.test(low) && /\b(will|do(es)?|can|why)\b/.test(low)) {
+      const syms = (t.match(/[A-Z][a-z]?/g) ?? []).filter((s) => BY_SYMBOL[s]);
+      if (syms.length >= 2) return await call("predict_bond", { symbols: syms });
+      if (getState().selection.length >= 2) return await call("predict_bond", {});
+    }
+
     // ---- explain / teach ----
-    if (/^(explain|what is|what's|define|teach me)\b/.test(low)) {
-      const topic = low.replace(/^(explain|what is|what's|define|teach me)\b/, "").replace(/[?.]/g, "").trim();
+    if (/^(explain|what is|what's|define|teach me|tell me about)\b/.test(low)) {
+      const topic = low.replace(/^(explain|what is|what's|define|teach me|tell me about)\b/, "").replace(/[?.]/g, "").trim();
+      // if a compound is on the stage and the topic names it, describe the compound
+      const p = getState().props;
+      if (p && (topic === "" || p.name.toLowerCase().includes(topic) || topic.includes(p.name.toLowerCase()) || /this|it/.test(topic))) {
+        return await call("describe_compound", { cid: p.cid });
+      }
       return await call("explain", { topic });
     }
 
@@ -149,7 +161,7 @@ export async function runOperator(text: string) {
       return out;
     }
 
-    return say("I can: build to constraints, find greener alternatives, combine elements, make a compound by name or formula, fetch 3D, assess hazard, check sourcing and uses, explain a concept. Your own agent can call any of the 17 tools on document.modelContext directly.");
+    return say("Try: \"will sodium and chlorine bond\", \"make CO2\", \"build a non-toxic polymer precursor from period-2 elements\", \"how hazardous is this\", \"what is it used for\", \"find greener alternatives\", \"explain TPSA\". Your own agent can call any of the 19 tools on document.modelContext directly.");
   } catch (e) {
     activity({ kind: "done", label: "Agent: hit an error." });
     setStatus("Agent: error — see console.");

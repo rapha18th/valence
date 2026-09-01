@@ -91,11 +91,15 @@ export async function getOneProperty(cid: number): Promise<MoleculeProps | null>
 
 // ---- 3D / 2D structure ----
 
-export async function get3dSdf(cid: number): Promise<{ sdf: string; is3d: boolean }> {
+export async function get3dSdf(cid: number): Promise<{ sdf: string; is3d: boolean; approx?: boolean }> {
   const three = await getText(ep.sdf3d(cid));
   if (three && three.includes("V2000")) return { sdf: three, is3d: true };
   const two = await getText(ep.sdf2d(cid));
-  return { sdf: two, is3d: false };
+  if (two && two.includes("V2000")) return { sdf: two, is3d: false };
+  // PubChem gave us nothing; use a bundled textbook geometry if we have one
+  const fb = fallbackByCid(cid);
+  if (fb?.sdf3d) return { sdf: fb.sdf3d, is3d: true, approx: true };
+  return { sdf: "", is3d: false };
 }
 
 // ---- GHS hazard ----
@@ -314,6 +318,23 @@ export async function getUses(cid: number): Promise<string[]> {
   };
   collect(sec);
   return out.slice(0, 8);
+}
+
+// ---- description / synonyms ----
+
+export async function getDescription(cid: number): Promise<{ text: string; source: string } | null> {
+  const json = await getJSON<{ InformationList?: { Information?: { Description?: string; DescriptionSourceName?: string }[] } }>(
+    ep.description(cid),
+  );
+  const infos = json?.InformationList?.Information ?? [];
+  const withText = infos.find((i) => i.Description);
+  if (!withText?.Description) return null;
+  return { text: withText.Description, source: withText.DescriptionSourceName ?? "PubChem" };
+}
+
+export async function getSynonyms(cid: number): Promise<string[]> {
+  const json = await getJSON<{ InformationList?: { Information?: { Synonym?: string[] }[] } }>(ep.synonyms(cid));
+  return (json?.InformationList?.Information?.[0]?.Synonym ?? []).slice(0, 12);
 }
 
 // ---- bioactivity ----

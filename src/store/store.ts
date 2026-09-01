@@ -4,8 +4,9 @@
 
 import type {
   State, NotebookEntry, Actor, AgentActivity, MoleculeProps, HazardProfile,
-  SimilarHit, ViabilityReport, BioReport, CandidateScore, StageMode,
+  SimilarHit, ViabilityReport, BioReport, CandidateScore, StageMode, BondPrediction,
 } from "./types.ts";
+import { predictBond } from "../chem/bonding.ts";
 
 type Listener = () => void;
 type ActivityListener = (a: AgentActivity) => void;
@@ -18,6 +19,7 @@ const state: State = {
 
   selection: [],
   armed: false,
+  bond: null,
 
   stageMode: "empty",
   props: null,
@@ -101,9 +103,14 @@ export function setStatus(text: string) {
   emit();
 }
 
+function refreshBond() {
+  state.bond = state.selection.length >= 2 ? predictBond(state.selection) : null;
+}
+
 export function setSelection(symbols: string[]) {
   state.selection = symbols.slice(0, 8);
   state.armed = state.selection.length >= 1;
+  refreshBond();
   emit();
 }
 
@@ -112,6 +119,12 @@ export function toggleElement(symbol: string) {
   if (i >= 0) state.selection.splice(i, 1);
   else if (state.selection.length < 8) state.selection.push(symbol);
   state.armed = state.selection.length >= 1;
+  refreshBond();
+  emit();
+}
+
+export function setBond(b: BondPrediction | null) {
+  state.bond = b;
   emit();
 }
 
@@ -165,6 +178,7 @@ export function setCandidates(c: CandidateScore[] | null) {
 export function resetCanvas() {
   state.selection = [];
   state.armed = false;
+  state.bond = null;
   state.stageMode = "empty";
   state.props = null;
   state.sdf3d = null;

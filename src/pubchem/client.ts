@@ -15,6 +15,19 @@ let lastAt = 0;
 
 const mem = new Map<string, { at: number; body: string }>();
 
+// tracks whether PubChem is currently answering, so tools can tell
+// "no data exists" apart from "the source is down right now".
+const health = { ok: true, lastFailAt: 0, lastOkAt: 0, lastStatus: 0 };
+export function pubchemHealthy(): boolean {
+  // treat a failure within the last 20s as "still down"
+  return health.ok || Date.now() - health.lastFailAt > 20000;
+}
+export function pubchemStatusNote(): string {
+  if (pubchemHealthy()) return "";
+  const s = health.lastStatus;
+  return s ? `PubChem is unreachable right now (HTTP ${s}).` : "PubChem is unreachable right now.";
+}
+
 function cacheGet(key: string): string | null {
   const hit = mem.get(key);
   if (hit) return hit.body;
@@ -71,23 +84,32 @@ async function raw(url: string, accept: string): Promise<string> {
   const cached = cacheGet(url);
   if (cached !== null) return cached;
   return enqueue(async () => {
+    // If PubChem just failed, don't retry-storm: try once, fail fast, let the
+    // caller fall back to the bundled set.
+    const maxAttempts = pubchemHealthy() ? 4 : 1;
     // PubChem returns 503 / 429 under load; back off and retry a couple times.
     for (let attempt = 0; ; attempt++) {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
       try {
         const res = await fetch(url, { headers: { Accept: accept }, signal: ctrl.signal });
-        if (res.status === 404) { cacheSet(url, ""); return ""; }
-        if ((res.status === 503 || res.status === 429 || res.status === 500) && attempt < 3) {
+        if (res.status === 404) { health.ok = true; health.lastOkAt = Date.now(); cacheSet(url, ""); return ""; }
+        if ((res.status === 503 || res.status === 429 || res.status === 500) && attempt < maxAttempts - 1) {
+          health.ok = false; health.lastFailAt = Date.now(); health.lastStatus = res.status;
           await sleep(500 * (attempt + 1));
           continue;
         }
-        if (!res.ok) throw new Error(`PubChem ${res.status} for ${url}`);
+        if (!res.ok) {
+          health.ok = false; health.lastFailAt = Date.now(); health.lastStatus = res.status;
+          throw new Error(`PubChem ${res.status} for ${url}`);
+        }
         const body = await res.text();
+        health.ok = true; health.lastOkAt = Date.now();
         cacheSet(url, body);
         return body;
       } catch (e) {
-        if (attempt < 3 && (e as Error)?.name === "AbortError") { await sleep(400); continue; }
+        if (attempt < maxAttempts - 1 && (e as Error)?.name === "AbortError") { await sleep(400); continue; }
+        health.ok = false; health.lastFailAt = Date.now();
         throw e;
       } finally {
         clearTimeout(t);

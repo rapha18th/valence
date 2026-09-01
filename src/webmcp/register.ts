@@ -35,6 +35,13 @@ const TOOLS: ToolDef[] = [
     execute: async (a) => wrap(ops.selectElements(a.symbols ?? [], "agent")),
   },
   {
+    name: "predict_bond",
+    description: "Offline chemistry: given element symbols, say whether they bond and why, using electronegativity and valence. Returns verdict (bond / no-bond / alloy), bond type, likely formula, and a plain-language explanation. No network.",
+    inputSchema: OBJ({ symbols: { type: "array", items: { type: "string" }, description: "Element symbols; defaults to the current selection" } }),
+    annotations: RO,
+    execute: async (a) => wrap(ops.predictBondOp(a.symbols, "agent")),
+  },
+  {
     name: "combine_selection",
     description: "Resolve the current element selection to a real compound via PubChem and render it on the stage. Optionally pass stoichiometry to fix the ratio.",
     inputSchema: OBJ({ stoichiometry: { type: "object", additionalProperties: { type: "integer", minimum: 1 }, description: 'Symbol to count, e.g. { "H": 2, "O": 1 }' } }),
@@ -87,6 +94,13 @@ const TOOLS: ToolDef[] = [
     inputSchema: OBJ({ cid: { type: "integer", minimum: 1 } }, ["cid"]),
     annotations: RO,
     execute: async (a) => wrap(await ops.industrialUses(Number(a.cid), "agent")),
+  },
+  {
+    name: "describe_compound",
+    description: "A plain-language description of a compound from PubChem, plus common names. Good for a beginner asking 'what is this?'.",
+    inputSchema: OBJ({ cid: { type: "integer", minimum: 1 } }, ["cid"]),
+    annotations: RO,
+    execute: async (a) => wrap(await ops.describeCompound(Number(a.cid), "agent")),
   },
   {
     name: "bioactivity_bridge",
@@ -203,22 +217,35 @@ function installDocumentShim() {
   return mc;
 }
 
-export async function registerTools(): Promise<string[]> {
+const registeredSurfaces = new WeakSet<object>();
+
+/**
+ * Register synchronously, as early as the module loads, so an agent that scans
+ * the page on document-ready already sees the tools. Safe to call repeatedly:
+ * it only (re)registers on surfaces it has not seen, which catches a native
+ * document.modelContext injected after our module ran.
+ */
+export function registerTools(): string[] {
   const surfaces: any[] = [];
   let doc = (document as any).modelContext;
   const nav = (navigator as any).modelContext;
 
   if (!doc?.registerTool) doc = installDocumentShim();
-  surfaces.push(doc);
-  if (nav?.registerTool && nav !== doc) surfaces.push(nav);
+  if (!registeredSurfaces.has(doc)) surfaces.push(doc);
+  if (nav?.registerTool && nav !== doc && !registeredSurfaces.has(nav)) surfaces.push(nav);
+  if (!surfaces.length) return TOOL_NAMES;
+  for (const s of surfaces) registeredSurfaces.add(s);
 
   let registered = 0;
   for (const mc of surfaces) {
     for (const t of TOOLS) {
       try {
-        await mc.registerTool(
-          { name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations, execute: t.execute },
-        );
+        // don't await: the shim resolves immediately, and @mcp-b's promise
+        // resolves on the next tick — we don't need to block on either
+        void mc.registerTool({
+          name: t.name, description: t.description, inputSchema: t.inputSchema,
+          annotations: t.annotations, execute: t.execute,
+        });
         registered++;
       } catch (e) {
         if (!/exist|duplicate/i.test(String(e))) console.warn("registerTool", t.name, e);
@@ -236,3 +263,6 @@ export async function registerTools(): Promise<string[]> {
   note("agent", "WebMCP ready", `${TOOLS.length} tools on document.modelContext`);
   return TOOL_NAMES;
 }
+
+// register the moment this module is imported
+try { registerTools(); } catch (e) { console.error("early registerTools failed", e); }

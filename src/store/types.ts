@@ -120,6 +120,16 @@ export interface CandidateScore {
   pass: boolean;
 }
 
+export interface BondPrediction {
+  symbols: string[];
+  verdict: "bond" | "no-bond" | "alloy" | "maybe";
+  bondType: "ionic" | "polar-covalent" | "nonpolar-covalent" | "metallic" | "none";
+  formula: string | null;
+  enDiff: number | null;
+  why: string;
+  note?: string;
+}
+
 export interface State {
   theme: "dark" | "light";
   sound: boolean;
@@ -128,6 +138,7 @@ export interface State {
 
   selection: string[]; // element symbols
   armed: boolean;
+  bond: BondPrediction | null;
 
   stageMode: StageMode;
   props: MoleculeProps | null;

@@ -9,10 +9,14 @@ import {
 import { ep } from "../pubchem/endpoints.ts";
 import {
   resolveCids, getProperties, getOneProperty, get3dSdf, getHazard,
-  similaritySearch, getViability, getBio, getUses, greenScore, type ResolveBy,
+  similaritySearch, getViability, getBio, getUses, getDescription, getSynonyms,
+  greenScore, type ResolveBy,
 } from "../pubchem/parse.ts";
+import { pubchemHealthy, pubchemStatusNote } from "../pubchem/client.ts";
+import { fallbackFind } from "../data/fallback.ts";
 import { BY_SYMBOL } from "../data/elements.ts";
 import { GLOSSARY } from "../data/glossary.ts";
+import { predictBond, bondVerdictGlyph } from "../chem/bonding.ts";
 import type { Actor, MoleculeProps, CandidateScore, SimilarHit } from "../store/types.ts";
 import { openRecipeCard } from "../ui/recipe-card.ts";
 
@@ -36,6 +40,21 @@ export function selectElements(symbols: string[], actor: Actor): Res {
   return ok(`Selection: ${clean.join(", ")}. Stage armed.`);
 }
 
+// ---------- bond prediction (no network) ----------
+export function predictBondOp(symbols: string[] | undefined, actor: Actor): Res {
+  const syms = symbols?.length ? symbols : getState().selection;
+  const p = predictBond(syms);
+  note(actor, `Bond check: ${p.symbols.join(" + ") || "—"}`,
+    `${bondVerdictGlyph(p.verdict)} ${p.bondType} — ${p.why}`);
+  return ok(
+    `${bondVerdictGlyph(p.verdict)} ${p.verdict.toUpperCase()} (${p.bondType})` +
+    (p.formula ? `, likely ${p.formula}` : "") +
+    (p.enDiff != null ? `, electronegativity gap ${p.enDiff.toFixed(1)}` : "") +
+    `.\n${p.why}` + (p.note ? `\nNote: ${p.note}` : ""),
+    p,
+  );
+}
+
 // ---------- combine ----------
 export async function combineSelection(
   stoich: Record<string, number> | undefined, actor: Actor,
@@ -57,10 +76,29 @@ export async function combineSelection(
     const cids = await resolveCids(formula, "formula");
     cid = cids.sort((a, b) => a - b)[0];
   }
-  if (!cid) return err(`Could not resolve a compound for ${formula}. Try giving stoichiometry, e.g. { "H": 2, "O": 1 }.`);
+  if (!cid) {
+    // no compound: explain why, using the offline bonding check
+    const p = predictBond(sel);
+    if (p.verdict === "no-bond") {
+      setStatus(`${sel.join(" + ")} do not bond.`);
+      note(actor, `Combined selection: ${sel.join(" + ")}`, `No compound. ${p.why}`);
+      return ok(`${bondVerdictGlyph("no-bond")} These elements do not form a compound. ${p.why}`);
+    }
+    if (p.verdict === "alloy") {
+      return ok(`${bondVerdictGlyph("alloy")} ${p.why} There is no single molecular compound to place on the stage.`);
+    }
+    const hint = pubchemHealthy()
+      ? `PubChem has no entry for the formula ${formula}. Try giving explicit stoichiometry, e.g. { "H": 2, "O": 1 }, or a known name.`
+      : `${pubchemStatusNote()} Could not resolve ${formula} and it is not in the bundled set. Retry in a moment.`;
+    return err(hint);
+  }
 
   const props = await getOneProperty(cid);
-  if (!props) return err(`Found CID ${cid} but no property record.`);
+  if (!props) {
+    return err(pubchemHealthy()
+      ? `Found CID ${cid} but PubChem returned no property record.`
+      : `${pubchemStatusNote()} Found CID ${cid} but could not fetch its properties.`);
+  }
   formula = props.formula || formula;
   setProps(props);
   setSdf3d(null); setHazard(null); setSimilars([]); setCandidates(null); setViability(null); setBio(null); setUses(null);
@@ -75,7 +113,11 @@ export async function combineSelection(
 export async function searchPubchem(query: string, by: ResolveBy, actor: Actor): Promise<Res> {
   setStatus(`Searching PubChem (${by})…`);
   const cids = await resolveCids(query, by);
-  if (!cids.length) return err(`No PubChem match for "${query}" by ${by}.`);
+  if (!cids.length) {
+    return err(pubchemHealthy()
+      ? `PubChem has no ${by} match for "${query}". Try a different spelling, a formula (by: "formula"), or a SMILES.`
+      : `${pubchemStatusNote()} Could not look up "${query}", and it is not in the bundled set. Retry in a moment.`);
+  }
   const props = await getProperties(cids.slice(0, 5));
   note(actor, "Searched PubChem", `${by}:"${query}" → ${cids.length} hit(s)`,
     { label: `CID ${cids[0]}`, url: ep.page(cids[0]) });
@@ -101,13 +143,24 @@ export async function fetchProperties(cid: number, actor: Actor): Promise<Res> {
 export async function fetch3dConformer(cid: number, actor: Actor): Promise<Res> {
   setStatus("Fetching 3D conformer…");
   activity({ kind: "target", selector: ".stage", label: "load 3D" });
-  const { sdf, is3d } = await get3dSdf(cid);
-  if (!sdf) return err(`No structure record for CID ${cid}.`);
+  const { sdf, is3d, approx } = await get3dSdf(cid);
+  if (!sdf) {
+    const why = pubchemHealthy()
+      ? `PubChem has no structure record for CID ${cid}.`
+      : `${pubchemStatusNote()} No cached or bundled geometry for CID ${cid}. Try again in a moment.`;
+    return err(why);
+  }
   setSdf3d(sdf);
-  note(actor, is3d ? "Rendered 3D conformer" : "Rendered 2D structure (no 3D on file)",
-    `CID ${cid}`, { label: "SDF", url: is3d ? ep.sdf3d(cid) : ep.sdf2d(cid) });
-  setStatus(is3d ? "3D conformer on the stage." : "2D structure (no 3D conformer available).");
-  return ok(is3d ? `3D ball-and-stick model rendered for CID ${cid}.` : `Only a 2D conformer is on file for CID ${cid}; rendered that.`);
+  const label = approx ? "Rendered approximate 3D geometry (bundled)"
+    : is3d ? "Rendered 3D conformer" : "Rendered 2D structure (no 3D on file)";
+  note(actor, label, `CID ${cid}`,
+    approx ? undefined : { label: "SDF", url: is3d ? ep.sdf3d(cid) : ep.sdf2d(cid) });
+  setStatus(approx ? "Approximate geometry on the stage (PubChem 3D unavailable)."
+    : is3d ? "3D conformer on the stage." : "2D structure (no 3D conformer available).");
+  return ok(approx
+    ? `PubChem's 3D conformer was unavailable; rendered a textbook geometry for CID ${cid} instead.`
+    : is3d ? `3D ball-and-stick model rendered for CID ${cid}.`
+    : `Only a 2D conformer is on file for CID ${cid}; rendered that.`);
 }
 
 // ---------- hazard ----------
@@ -115,6 +168,9 @@ export async function assessHazard(cid: number, actor: Actor): Promise<Res> {
   setStatus("Reading GHS hazard record…");
   activity({ kind: "target", selector: ".hazard, .stage", label: "assess hazard" });
   const h = await getHazard(cid);
+  if (h.severity === "unknown" && !pubchemHealthy()) {
+    return err(`${pubchemStatusNote()} The GHS record is a live PubChem PUG View call. Retry in a moment.`);
+  }
   setHazard(h);
   const summary = h.severity === "unknown"
     ? "No GHS classification on file."
@@ -132,7 +188,11 @@ export async function findSimilar(
   const cids = await similaritySearch(smiles, threshold, Math.max(limit + 3, 8));
   const self = getState().props?.cid;
   const others = cids.filter((c) => c !== self).slice(0, limit);
-  if (!others.length) return err("No similar compounds returned.");
+  if (!others.length) {
+    return err(pubchemHealthy()
+      ? `No compounds within Tanimoto ${threshold / 100} of ${smiles}. Lower the threshold (try 80) or simplify the SMILES.`
+      : `${pubchemStatusNote()} Similarity search is a live PubChem call and has no offline fallback. Retry in a moment.`);
+  }
   const props = await getProperties(others);
   const hits: SimilarHit[] = props.map((p) => {
     const base: SimilarHit = {
@@ -155,10 +215,27 @@ export async function findSimilar(
 export async function industrialViability(cid: number, actor: Actor): Promise<Res> {
   setStatus("Checking sourcing and patents…");
   const v = await getViability(cid);
+  if (v.vendorCount === null && v.patentCount === null && !pubchemHealthy()) {
+    return err(`${pubchemStatusNote()} Sourcing and patent counts come from live PubChem PUG View. Retry in a moment.`);
+  }
   setViability(v);
   note(actor, "Industrial viability", v.verdict, { label: `CID ${cid}`, url: ep.page(cid) });
   setStatus("Viability assessed.");
   return ok(`Vendors: ${v.vendorCount ?? "unknown"}, patent references: ${v.patentCount ?? "unknown"}. ${v.verdict}`, v);
+}
+
+// ---------- description (beginner-friendly summary) ----------
+export async function describeCompound(cid: number, actor: Actor): Promise<Res> {
+  setStatus("Reading PubChem description…");
+  const [d, syn] = await Promise.all([getDescription(cid), getSynonyms(cid)]);
+  if (!d) {
+    return pubchemHealthy()
+      ? ok(`PubChem has no written description for CID ${cid}.${syn.length ? " Also known as: " + syn.slice(0, 6).join(", ") + "." : ""}`)
+      : err(`${pubchemStatusNote()} Descriptions come from live PubChem. Retry in a moment.`);
+  }
+  note(actor, "Compound description", d.text.length > 200 ? d.text.slice(0, 197) + "…" : d.text,
+    { label: d.source, url: ep.page(cid) });
+  return ok(`${d.text}\n\n(Source: ${d.source}${syn.length ? "; also known as " + syn.slice(0, 6).join(", ") : ""}.)`);
 }
 
 // ---------- industrial / consumer uses ----------
@@ -167,9 +244,12 @@ export async function industrialUses(cid: number, actor: Actor): Promise<Res> {
   const uses = await getUses(cid);
   setUses(uses.length ? uses : null);
   if (!uses.length) {
-    note(actor, "Industrial uses", "No Uses annotations on file for this compound.",
+    if (!pubchemHealthy()) {
+      return err(`${pubchemStatusNote()} The Uses annotations come from live PubChem PUG View. Retry in a moment.`);
+    }
+    note(actor, "Industrial uses", "PubChem has no Uses annotations for this compound.",
       { label: `CID ${cid}`, url: ep.page(cid) });
-    return ok("No Uses annotations on file for this compound.");
+    return ok(`PubChem has no Uses annotations for CID ${cid}. Common for very simple or very new compounds. Try a related, better-studied analogue.`);
   }
   note(actor, "Industrial uses", uses.slice(0, 4).join(" · "),
     { label: `CID ${cid}`, url: ep.page(cid) });
@@ -181,6 +261,9 @@ export async function industrialUses(cid: number, actor: Actor): Promise<Res> {
 export async function bioactivityBridge(cid: number, actor: Actor): Promise<Res> {
   setStatus("Reading bioassay summary…");
   const b = await getBio(cid);
+  if (b.activeAssays === null && !b.targets.length && !pubchemHealthy()) {
+    return err(`${pubchemStatusNote()} Bioassay data is a live PubChem call. Retry in a moment.`);
+  }
   setBio(b);
   const summary = `${b.activeAssays ?? 0} active assays; targets: ${b.targets.slice(0, 5).join(", ") || "none listed"}`;
   note(actor, "Bioactivity bridge", summary, { label: `CID ${cid}`, url: ep.page(cid) });
@@ -219,18 +302,32 @@ export function resetCanvasOp(actor: Actor): Res {
 }
 
 // ---------- substitute & compare ----------
-const SUBS: Record<string, string> = { "-OH": "O", "-CH3": "C", "-F": "F", "-NH2": "N", "-COOH": "C(=O)O" };
+const SUBS: Record<string, string> = {
+  "-oh": "O", "-ch3": "C", "-f": "F", "-cl": "Cl", "-nh2": "N", "-cooh": "C(=O)O",
+};
+function applySub(base: string, group: string): string {
+  // add the group as a branch on the first carbon that has a free valence,
+  // i.e. the first "C" not already followed by an open bracket
+  const m = /C(?![(])/.exec(base);
+  if (!m) return `${base}${group}`;
+  const i = m.index + 1;
+  return `${base.slice(0, i)}(${group})${base.slice(i)}`;
+}
 export async function substituteAndCompare(baseSmiles: string, change: string, actor: Actor): Promise<Res> {
   const before = getState().props;
-  let target = change;
-  if (SUBS[change]) {
-    // naive: append the group to the first carbon; good enough for a directional what-if
-    target = baseSmiles.replace(/C/, `C(${SUBS[change]})`);
-  }
+  const key = change.toLowerCase().replace(/\s+/g, "");
+  const group = SUBS[key];
+  const target = group ? applySub(baseSmiles, group) : change;
+
   const cids = await resolveCids(target, "smiles");
-  if (!cids.length) return err(`Could not resolve the modified structure (${target}).`);
+  if (!cids.length) {
+    const why = pubchemHealthy()
+      ? `PubChem does not recognise the modified structure ${target}. It may be an unstable or unregistered species. Try a different substituent or a full target SMILES.`
+      : `${pubchemStatusNote()} Could not validate ${target}. Retry in a moment.`;
+    return err(`${why} (base ${baseSmiles} + ${change})`);
+  }
   const after = await getOneProperty(cids[0]);
-  if (!after) return err("No property record for the modified structure.");
+  if (!after) return err(`Resolved to CID ${cids[0]} but no property record is available right now.`);
   setProps(after); setSdf3d(null);
   const diff = (a: number | null, b: number | null) =>
     a === null || b === null ? "?" : (b - a >= 0 ? "+" : "") + (b - a).toFixed(2);
@@ -281,9 +378,14 @@ export async function buildToConstraints(goal: string, raw: Constraints, actor: 
   const seeds = candidateSeeds(goal);
   activity({ kind: "note", label: `searching ${seeds.length} candidates` });
 
-  // resolve names -> CIDs, then one batched property call for the whole pool
+  // resolve names -> CIDs. Check the bundled set first so a PubChem outage
+  // never turns this into an 8-way retry storm.
+  const budget = Date.now() + 10000;
   const pairs: { seed: string; cid: number }[] = [];
   for (const seed of seeds) {
+    const fb = fallbackFind(seed);
+    if (fb) { pairs.push({ seed, cid: fb.cid }); continue; }
+    if (Date.now() > budget) break;
     const cids = await resolveCids(seed, "name");
     if (cids.length) pairs.push({ seed, cid: cids[0] });
   }
@@ -305,12 +407,17 @@ export async function buildToConstraints(goal: string, raw: Constraints, actor: 
   if (!scored.length) return err("No candidates resolved for that goal.");
 
   // check the GHS record for every candidate, so a "non-toxic" goal actually
-  // rewards the safer molecule rather than whatever sorted first.
+  // rewards the safer molecule rather than whatever sorted first. Bounded by a
+  // ~14s budget so the tool always returns a ranking instead of hanging.
+  const deadline = Date.now() + 14000;
   const wantSafe = cons.nonToxic || /non[\s-]?toxic|green|safe/.test(goal.toLowerCase());
   activity({ kind: "note", label: "checking hazard on every candidate" });
   const hazards = new Map<number, Awaited<ReturnType<typeof getHazard>>>();
+  let hazardChecked = 0;
   for (const c of scored) {
+    if (Date.now() > deadline) break;
     const h = await getHazard(c.cid);
+    hazardChecked++;
     hazards.set(c.cid, h);
     const penalty =
       h.severity === "severe" ? 45 : h.severity === "high" ? 30 :
@@ -347,10 +454,12 @@ export async function buildToConstraints(goal: string, raw: Constraints, actor: 
     note(actor, `Candidate: ${c.name}`, `score ${c.score}/100 — ${c.reasons.join("; ")}`,
       { label: `CID ${c.cid}`, url: ep.page(c.cid) });
   }
+  const partial = hazardChecked < scored.length;
   activity({ kind: "done", label: `Agent: ${winner.name} scored ${winner.score}/100.` });
-  setStatus(`Best fit: ${winner.name} (${winner.score}/100).`);
+  setStatus(`Best fit: ${winner.name} (${winner.score}/100).` + (partial ? " (partial: time budget hit)" : ""));
   return ok(
-    `Ranked candidates for "${goal}":\n` +
+    `Ranked candidates for "${goal}"` +
+    (partial ? ` (hazard-checked ${hazardChecked}/${scored.length} before the time budget):` : ":") + "\n" +
     top.map((c) => `  ${c.pass ? "✓" : "✗"} ${c.name} (${c.formula}) — ${c.score}/100: ${c.reasons.join("; ")}`).join("\n"),
     top,
   );
