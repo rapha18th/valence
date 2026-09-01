@@ -1,0 +1,26 @@
+{
+  "name": "valence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A playable periodic table wired to PubChem, operable by AI agents through WebMCP.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.1.0",
+    "@fontsource/jetbrains-mono": "^5.1.1",
+    "@mcp-b/global": "^1.0.0",
+    "3dmol": "^2.4.2",
+    "smiles-drawer": "^2.1.7",
+    "zod": "^4.5.4",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}
