@@ -11,6 +11,28 @@ import type {
 
 const SAFE_CIDS = new Set([962, 783, 977, 280, 23987, 23968, 24523]); // water, H2, O2, CO2, N2, He, Ne-ish
 
+// short text for the H-codes used by the bundled GHS summaries
+const H_TEXT: Record<string, string> = {
+  H220: "Extremely flammable gas",
+  H226: "Flammable liquid and vapour",
+  H301: "Toxic if swallowed",
+  H302: "Harmful if swallowed",
+  H311: "Toxic in contact with skin",
+  H312: "Harmful in contact with skin",
+  H314: "Causes severe skin burns and eye damage",
+  H315: "Causes skin irritation",
+  H317: "May cause an allergic skin reaction",
+  H318: "Causes serious eye damage",
+  H319: "Causes serious eye irritation",
+  H331: "Toxic if inhaled",
+  H332: "Harmful if inhaled",
+  H335: "May cause respiratory irritation",
+  H336: "May cause drowsiness or dizziness",
+  H350: "May cause cancer",
+  H373: "May cause organ damage through prolonged exposure",
+  H400: "Very toxic to aquatic life",
+};
+
 // ---- provenance ----
 // Read back how client.ts resolved the URL we just called, and turn it into a
 // Provenance stamp. `usedFallback` short-circuits to the bundled set.
@@ -202,6 +224,20 @@ export async function getHazard(cid: number): Promise<HazardProfile> {
   };
 
   if (!ghs?.Information?.length) {
+    // PubChem carried nothing. If we bundled a GHS summary for this CID (the
+    // build seeds), use it so the hazard-aware ranking still differentiates
+    // during an outage. Provenance stays honest: "bundled reference".
+    const fb = fallbackByCid(cid)?.ghs;
+    if (fb) {
+      profile.signal = fb.signal;
+      profile.severity = fb.severity;
+      profile.pictograms = (fb.pictograms ?? []).slice().sort();
+      profile.statements = fb.hcodes.map((c) => ({ code: c, text: H_TEXT[c] ?? "" }));
+      profile.basis = "primary-classification";
+      profile.notifierNote = "bundled GHS summary; PubChem GHS endpoint unavailable";
+      profile.prov = { source: "bundled", fetchedAt: null, detail: "offline GHS summary" };
+      return profile;
+    }
     if (!reachable) {
       // could not check — say exactly that, do not imply anything about safety
       profile.severity = "unknown";
