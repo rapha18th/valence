@@ -150,8 +150,17 @@ export function mountStage(root: HTMLElement) {
   }
 
   function draw2d(p: MoleculeProps) {
-    if (!p.smiles || p.smiles === lastSmiles) return;
+    if (p.smiles === lastSmiles) return;
     lastSmiles = p.smiles;
+    if (!p.smiles) {
+      // a predicted / offline compound with no structure on file
+      svg2d.innerHTML =
+        `<text x="220" y="176" text-anchor="middle" fill="#7b776e" ` +
+        `font-family="var(--font-mono)" font-size="15">${p.formula || "no structure"}</text>` +
+        `<text x="220" y="200" text-anchor="middle" fill="#5b5852" ` +
+        `font-family="var(--font-mono)" font-size="11">structure not available offline</text>`;
+      return;
+    }
     drawStructureSvg(p.smiles, svg2d as SVGSVGElement, getState().theme === "light" ? "light" : "dark");
   }
 

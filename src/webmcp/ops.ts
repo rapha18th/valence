@@ -72,11 +72,23 @@ function clearRecovery() {
 const KNOWN_COMBOS: Record<string, number> = {
   "H,O": 962, "H,H,O": 962, "Cl,Na": 5234, "C,O": 280, "C,O,O": 280,
   "Cl,H": 313, "H,N": 222, "H,H,H,N": 222, "C,H": 297,
-  "C,H,H,H,H": 297, "H,S": 402, "H,H,S": 402, "O,S": 1119,
-  "F,F": 24524, "Ca,F,F": 24617, "Mg,O": 14792, "K,O": 25522,
+  "C,H,H,H,H": 297, "H,S": 402, "H,H,S": 402, "O,S": 1119, "O,O,S": 24682,
+  "F,F": 24524, "Ca,F,F": 24617, "Mg,O": 14792, "K,K,O": 25522,
   "Ca,O": 14778, "F,Li": 224478, "F,Na": 5235, "H,H,O,O": 784,
-  "N,N": 947, "O,O": 977,
+  "N,N": 947, "O,O": 977, "Cl,Cl": 24526,
+  "Li,Li,O": 166630, "Na,Na,O": 73974, "Al,Al,O,O,O": 9989226,
+  "Cl,K": 4873, "Ca,Cl,Cl": 5284359, "Cl,Cl,Mg": 5360315,
+  "Al,Cl,Cl,Cl": 24564, "Br,K": 253877, "I,K": 4875, "Br,Na": 253881,
+  "F,H": 14917, "C,Ca,O,O,O": 10112, "H,Na,O": 14798, "H,K,O": 14797,
+  "N,N,O": 948,
 };
+
+/** rough molar mass from element counts, for an offline predicted compound */
+function molarMass(counts: Record<string, number>): number {
+  let m = 0;
+  for (const [sym, n] of Object.entries(counts)) m += (BY_SYMBOL[sym]?.mass ?? 0) * n;
+  return m;
+}
 
 /** "CaF2" -> { Ca: 1, F: 2 }; returns null if it isn't a plain formula */
 function parseFormulaCounts(s: string): Record<string, number> | null {
@@ -157,10 +169,30 @@ export async function combineSelection(
       return ok(`${bondVerdictGlyph("alloy")} ${p.why} There is no single molecular compound to place on the stage.`);
     }
     if (!pubchemHealthy()) {
-      recover("PubChem unreachable — compound not resolved",
-        `${formula} is not in the bundled set and the live lookup could not complete.`,
-        [{ label: "Retry combine", tool: "combine_selection", args: { stoichiometry: counts } }]);
-      return err(`${pubchemStatusNote()} Could not resolve ${formula}. Recovery: retry in a moment.`);
+      // PubChem is down and this one is not bundled. Don't dead-end: stage the
+      // compound the offline bonding model predicts, clearly marked computed,
+      // and still offer a retry against PubChem.
+      const predicted: MoleculeProps = {
+        cid: 0,
+        name: `${formula} (predicted)`,
+        formula,
+        smiles: "",
+        weight: Math.round(molarMass(counts) * 100) / 100,
+        tpsa: null, xlogp: null, hbd: null, hba: null, rotatable: null, complexity: null,
+        prov: { source: "computed", fetchedAt: null, detail: "offline bonding model; PubChem unavailable" },
+      };
+      setProps(predicted);
+      setSdf3d(null); setHazard(null); setSimilars([]); setCandidates(null); setViability(null); setBio(null); setUses(null); setComparison(null);
+      recover("Predicted compound — PubChem is unreachable",
+        `${formula} is not in the offline set, so this is the bonding model's prediction (${p.bondType}), not a PubChem record.`,
+        [{ label: "Retry with PubChem", tool: "combine_selection", args: { stoichiometry: counts } }]);
+      note(actor, "Combined selection (predicted)", `${sel.join(" + ")} → ${formula} · ${p.bondType} · computed offline`);
+      setStatus(`${formula} (predicted) on the stage — PubChem unavailable.`);
+      return ok(
+        `${bondVerdictGlyph(p.verdict)} Predicted ${p.bondType} compound ${formula}. ${p.why}\n` +
+        `PubChem is unreachable, so this is the offline bonding model, not a database record.`,
+        predicted,
+      );
     }
     return err(`PubChem has no entry for the formula ${formula}. Try explicit stoichiometry, e.g. { "H": 2, "O": 1 }, or a known name.`);
   }
