@@ -6,6 +6,7 @@
 import "@mcp-b/global";
 import { setWebmcp, note } from "../store/store.ts";
 import * as ops from "./ops.ts";
+import { withTrace } from "./trace.ts";
 import type { ResolveBy } from "../pubchem/parse.ts";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -27,7 +28,7 @@ const OBJ = (props: Record<string, unknown>, required: string[] = []) => ({
 });
 const RO = { readOnlyHint: true };
 
-const TOOLS: ToolDef[] = [
+const RAW_TOOLS: ToolDef[] = [
   {
     name: "select_elements",
     description: "Set the periodic-table selection and arm the assembly stage. Symbols are case-sensitive element symbols like H, Na, Cl.",
@@ -129,7 +130,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: "build_to_constraints",
-    description: "The headline flow. Given a goal (e.g. 'non-toxic polymer precursor') and constraints (allowed elements or a period number, weight/logP caps, non-toxic), search PubChem, hazard-check every candidate, score, rank the top three, and put the winner on the stage.",
+    description: "The headline flow, asynchronous. Given a goal (e.g. 'non-toxic polymer precursor') and constraints (allowed elements or a period number, weight/logP caps, non-toxic), it starts a job and returns a jobId immediately. The job resolves candidates, dedupes them, hazard-checks every one, scores transparently, and commits the ranked result to the stage in a single step. Poll get_build_status; stop early with cancel_build.",
     inputSchema: OBJ({
       goal: { type: "string" },
       constraints: OBJ({
@@ -140,7 +141,20 @@ const TOOLS: ToolDef[] = [
         maxLogP: { type: "number" },
       }),
     }, ["goal"]),
-    execute: async (a) => wrap(await ops.buildToConstraints(String(a.goal), a.constraints ?? {}, "agent")),
+    execute: async (a) => wrap(ops.startBuild(String(a.goal), a.constraints ?? {}, "agent")),
+  },
+  {
+    name: "get_build_status",
+    description: "Poll a build_to_constraints job: current phase, progress counter, elapsed time, whether a time budget cut it short, and the ranked candidates with each one's score breakdown and rejection reason. Omit jobId for the most recent job.",
+    inputSchema: OBJ({ jobId: { type: "string" } }),
+    annotations: RO,
+    execute: async (a) => wrap(ops.getBuildStatus(a.jobId ? String(a.jobId) : undefined)),
+  },
+  {
+    name: "cancel_build",
+    description: "Request that a running build_to_constraints job stop. It halts at the next checkpoint and commits whatever it has already fully ranked, never a half-scored state. Omit jobId for the most recent job.",
+    inputSchema: OBJ({ jobId: { type: "string" } }),
+    execute: async (a) => wrap(ops.cancelBuild(a.jobId ? String(a.jobId) : undefined)),
   },
   {
     name: "propose_greener_alternatives",
@@ -176,6 +190,13 @@ const TOOLS: ToolDef[] = [
     execute: async () => wrap(ops.resetCanvasOp("agent")),
   },
 ];
+
+// Every tool call, whoever makes it, goes through withTrace so the trace panel
+// sees inputs, outputs, duration, retries, and errors.
+const TOOLS: ToolDef[] = RAW_TOOLS.map((t) => ({
+  ...t,
+  execute: (args: unknown) => withTrace(t.name, args, () => t.execute(args)),
+}));
 
 /** name -> execute, for the built-in operator to invoke tools the same way. */
 export const TOOL_EXEC = new Map<string, Exec>(TOOLS.map((t) => [t.name, t.execute]));

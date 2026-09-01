@@ -15,6 +15,27 @@ let lastAt = 0;
 
 const mem = new Map<string, { at: number; body: string }>();
 
+// Per-URL record of how the last read for that URL resolved: from cache or the
+// network, when, and with what status. Keyed by URL so concurrent requests
+// never clobber each other's provenance. The parse layer reads this back to
+// stamp every claim with where it came from.
+export interface ReqMeta {
+  source: "network" | "cache";
+  fetchedAt: number;
+  status: number;
+  ok: boolean;
+}
+const reqLog = new Map<string, ReqMeta>();
+export function reqMeta(url: string): ReqMeta | undefined {
+  return reqLog.get(url);
+}
+
+// running totals so a tool trace can report how many retries a call cost
+const stats = { retries: 0 };
+export function reqStats(): { retries: number } {
+  return { retries: stats.retries };
+}
+
 // tracks whether PubChem is currently answering, so tools can tell
 // "no data exists" apart from "the source is down right now".
 const health = { ok: true, lastFailAt: 0, lastOkAt: 0, lastStatus: 0 };
@@ -82,7 +103,15 @@ function enqueue<T>(run: () => Promise<T>): Promise<T> {
 
 async function raw(url: string, accept: string): Promise<string> {
   const cached = cacheGet(url);
-  if (cached !== null) return cached;
+  if (cached !== null) {
+    reqLog.set(url, {
+      source: "cache",
+      fetchedAt: mem.get(url)?.at ?? Date.now(),
+      status: 200,
+      ok: true,
+    });
+    return cached;
+  }
   return enqueue(async () => {
     // If PubChem just failed, don't retry-storm: try once, fail fast, let the
     // caller fall back to the bundled set.
@@ -93,23 +122,34 @@ async function raw(url: string, accept: string): Promise<string> {
       const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
       try {
         const res = await fetch(url, { headers: { Accept: accept }, signal: ctrl.signal });
-        if (res.status === 404) { health.ok = true; health.lastOkAt = Date.now(); cacheSet(url, ""); return ""; }
+        if (res.status === 404) {
+          health.ok = true; health.lastOkAt = Date.now();
+          reqLog.set(url, { source: "network", fetchedAt: Date.now(), status: 404, ok: true });
+          cacheSet(url, "");
+          return "";
+        }
         if ((res.status === 503 || res.status === 429 || res.status === 500) && attempt < maxAttempts - 1) {
           health.ok = false; health.lastFailAt = Date.now(); health.lastStatus = res.status;
+          stats.retries++;
           await sleep(500 * (attempt + 1));
           continue;
         }
         if (!res.ok) {
           health.ok = false; health.lastFailAt = Date.now(); health.lastStatus = res.status;
+          reqLog.set(url, { source: "network", fetchedAt: Date.now(), status: res.status, ok: false });
           throw new Error(`PubChem ${res.status} for ${url}`);
         }
         const body = await res.text();
         health.ok = true; health.lastOkAt = Date.now();
+        reqLog.set(url, { source: "network", fetchedAt: Date.now(), status: res.status, ok: true });
         cacheSet(url, body);
         return body;
       } catch (e) {
-        if (attempt < maxAttempts - 1 && (e as Error)?.name === "AbortError") { await sleep(400); continue; }
+        if (attempt < maxAttempts - 1 && (e as Error)?.name === "AbortError") { stats.retries++; await sleep(400); continue; }
         health.ok = false; health.lastFailAt = Date.now();
+        if (!reqLog.get(url) || reqLog.get(url)!.ok) {
+          reqLog.set(url, { source: "network", fetchedAt: Date.now(), status: health.lastStatus || 0, ok: false });
+        }
         throw e;
       } finally {
         clearTimeout(t);

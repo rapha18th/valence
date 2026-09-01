@@ -2,6 +2,21 @@ import { el, fmt } from "../lib/dom.ts";
 import { getState } from "../store/store.ts";
 import { structureToPng } from "../lib/structure2d.ts";
 import { toast } from "./toasts.ts";
+import { hazardLabel } from "../webmcp/ops.ts";
+import type { MoleculeProps } from "../store/types.ts";
+
+function provLine(p: MoleculeProps): string {
+  const q = p.prov;
+  if (!q) return "provenance unknown";
+  const when = q.fetchedAt ? new Date(q.fetchedAt).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "";
+  const src =
+    q.source === "pubchem-live" ? "PubChem, fetched live"
+    : q.source === "pubchem-cache" ? "PubChem, from cache"
+    : q.source === "bundled" ? "bundled offline reference"
+    : q.source === "computed" ? "computed locally"
+    : "source unavailable at export time";
+  return when ? `${src} (${when})` : src;
+}
 
 export function openRecipeCard() {
   const s = getState();
@@ -26,9 +41,11 @@ export function openRecipeCard() {
       ]),
       el("div", {
         style: "font-family:var(--font-mono);font-size:var(--step--1);color:var(--ink-300)",
-        text: h
-          ? `Hazard: ${h.signal ?? h.severity}${h.pictograms.length ? " · " + h.pictograms.join(" ") : ""}`
-          : "Hazard: not assessed",
+        text: `Hazard: ${hazardLabel(h)}${h?.pictograms.length ? " · " + h.pictograms.join(" ") : ""}`,
+      }),
+      el("div", {
+        style: "font-family:var(--font-mono);font-size:10px;color:var(--ink-500)",
+        text: `Properties: ${provLine(p)}`,
       }),
       el("div", {
         style: "font-family:var(--font-mono);font-size:10px;color:var(--ink-500);word-break:break-all",
@@ -120,15 +137,18 @@ async function downloadCard(
   y += 20;
   ctx.fillStyle = "#8b877e"; ctx.fillText("HAZARD (GHS)", 44, y); y += 28;
   ctx.fillStyle = h ? sevColor(h.severity) : "#8b877e";
-  ctx.font = "600 20px 'JetBrains Mono', monospace";
-  ctx.fillText(h ? (h.signal ?? h.severity.toUpperCase()) : "NOT ASSESSED", 44, y);
+  ctx.font = "600 18px 'JetBrains Mono', monospace";
+  ctx.fillText(hazardLabel(h).toUpperCase(), 44, y);
+  ctx.font = "12px 'JetBrains Mono', monospace"; ctx.fillStyle = "#8b877e";
+  ctx.fillText(h ? `basis: ${h.basis.replace(/-/g, " ")}` : "", 44, y + 22);
   if (h?.pictograms.length) {
     ctx.font = "14px 'JetBrains Mono', monospace"; ctx.fillStyle = "#c4c0b8";
-    ctx.fillText(h.pictograms.join("  "), 44, y + 26);
+    ctx.fillText(h.pictograms.join("  "), 44, y + 44);
   }
 
   ctx.fillStyle = "#5b5852";
   ctx.font = "12px 'JetBrains Mono', monospace";
+  ctx.fillText(`Properties: ${provLine(p)}`, 44, H - 58);
   ctx.fillText(`Source: pubchem.ncbi.nlm.nih.gov/compound/${p.cid}`, 44, H - 40);
 
   const a = document.createElement("a");

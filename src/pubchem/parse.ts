@@ -2,14 +2,42 @@
 // parse GHS hazard records, run similarity search, estimate sourcing.
 
 import { ep } from "./endpoints.ts";
-import { getJSON, getText } from "./client.ts";
+import { getJSON, getText, reqMeta } from "./client.ts";
 import { fallbackFind, fallbackByCid } from "../data/fallback.ts";
 import type {
   MoleculeProps, HazardProfile, HazardPictogram, HazardSeverity, SimilarHit,
-  ViabilityReport, BioReport,
+  ViabilityReport, BioReport, Provenance,
 } from "../store/types.ts";
 
 const SAFE_CIDS = new Set([962, 783, 977, 280, 23987, 23968, 24523]); // water, H2, O2, CO2, N2, He, Ne-ish
+
+// ---- provenance ----
+// Read back how client.ts resolved the URL we just called, and turn it into a
+// Provenance stamp. `usedFallback` short-circuits to the bundled set.
+export function provFor(url: string, usedFallback: boolean): Provenance {
+  if (usedFallback) {
+    return { source: "bundled", fetchedAt: null, detail: "offline reference set" };
+  }
+  const m = reqMeta(url);
+  if (!m || !m.ok) {
+    return {
+      source: "unavailable",
+      fetchedAt: m?.fetchedAt ?? null,
+      detail: m?.status ? `HTTP ${m.status}` : "no response",
+    };
+  }
+  return {
+    source: m.source === "cache" ? "pubchem-cache" : "pubchem-live",
+    fetchedAt: m.fetchedAt,
+  };
+}
+
+export function confidenceOf(p: Provenance | undefined): "high" | "medium" | "low" {
+  if (!p) return "low";
+  if (p.source === "pubchem-live" || p.source === "pubchem-cache") return "high";
+  if (p.source === "bundled" || p.source === "computed") return "medium";
+  return "low";
+}
 
 // ---- identifier resolution ----
 
@@ -73,33 +101,50 @@ function num(v: unknown): number | null {
 
 export async function getProperties(cids: number[]): Promise<MoleculeProps[]> {
   if (!cids.length) return [];
-  const json = await getJSON<{ PropertyTable?: { Properties?: RawProp[] } }>(
-    ep.properties(cids.slice(0, 50)),
-  );
+  const url = ep.properties(cids.slice(0, 50));
+  const json = await getJSON<{ PropertyTable?: { Properties?: RawProp[] } }>(url);
   const live = (json?.PropertyTable?.Properties ?? []).map(toProps);
-  if (live.length) return live;
+  if (live.length) {
+    const prov = provFor(url, false);
+    for (const p of live) p.prov = prov;
+    return live;
+  }
   // PubChem unreachable: return whatever the bundled set covers
   const out: MoleculeProps[] = [];
-  for (const c of cids) { const f = fallbackByCid(c); if (f) out.push(f); }
+  for (const c of cids) {
+    const f = fallbackByCid(c);
+    if (f) out.push({ ...f, prov: { source: "bundled", fetchedAt: null, detail: "offline reference set" } });
+  }
   return out;
 }
 
 export async function getOneProperty(cid: number): Promise<MoleculeProps | null> {
   const list = await getProperties([cid]);
-  return list[0] ?? fallbackByCid(cid) ?? null;
+  if (list[0]) return list[0];
+  const f = fallbackByCid(cid);
+  return f ? { ...f, prov: { source: "bundled", fetchedAt: null, detail: "offline reference set" } } : null;
 }
 
 // ---- 3D / 2D structure ----
 
-export async function get3dSdf(cid: number): Promise<{ sdf: string; is3d: boolean; approx?: boolean }> {
-  const three = await getText(ep.sdf3d(cid));
-  if (three && three.includes("V2000")) return { sdf: three, is3d: true };
-  const two = await getText(ep.sdf2d(cid));
-  if (two && two.includes("V2000")) return { sdf: two, is3d: false };
+export async function get3dSdf(
+  cid: number,
+): Promise<{ sdf: string; is3d: boolean; approx?: boolean; prov: Provenance }> {
+  const u3 = ep.sdf3d(cid);
+  const three = await getText(u3);
+  if (three && three.includes("V2000")) return { sdf: three, is3d: true, prov: provFor(u3, false) };
+  const u2 = ep.sdf2d(cid);
+  const two = await getText(u2);
+  if (two && two.includes("V2000")) return { sdf: two, is3d: false, prov: provFor(u2, false) };
   // PubChem gave us nothing; use a bundled textbook geometry if we have one
   const fb = fallbackByCid(cid);
-  if (fb?.sdf3d) return { sdf: fb.sdf3d, is3d: true, approx: true };
-  return { sdf: "", is3d: false };
+  if (fb?.sdf3d) {
+    return {
+      sdf: fb.sdf3d, is3d: true, approx: true,
+      prov: { source: "bundled", fetchedAt: null, detail: "hand-built textbook geometry" },
+    };
+  }
+  return { sdf: "", is3d: false, prov: provFor(u3, false) };
 }
 
 // ---- GHS hazard ----
@@ -142,18 +187,34 @@ export async function getHazard(cid: number): Promise<HazardProfile> {
   const json = await getJSON<{ Record?: { Section?: PugSection[] } }>(url);
   const root = json?.Record?.Section;
   const ghs = walk(root, "GHS Classification");
+  const meta = reqMeta(url);
+  const reachable = !!meta && meta.ok;
 
   const profile: HazardProfile = {
     cid,
     severity: "unknown",
+    basis: "source-unavailable",
     signal: null,
     pictograms: [],
     statements: [],
     sourceUrl: ep.page(cid),
+    prov: provFor(url, false),
   };
 
   if (!ghs?.Information?.length) {
-    profile.severity = SAFE_CIDS.has(cid) ? "none" : "unknown";
+    if (!reachable) {
+      // could not check — say exactly that, do not imply anything about safety
+      profile.severity = "unknown";
+      profile.basis = "source-unavailable";
+      return profile;
+    }
+    if (SAFE_CIDS.has(cid)) {
+      profile.severity = "none";
+      profile.basis = "reference-safe";
+    } else {
+      profile.severity = "unknown";
+      profile.basis = "no-ghs-record";
+    }
     return profile;
   }
 
@@ -199,7 +260,18 @@ export async function getHazard(cid: number): Promise<HazardProfile> {
   profile.signal = danger ? "Danger" : warning ? "Warning" : null;
   profile.statements = [...stmts].map(([code, text]) => ({ code, text })).slice(0, 8);
   profile.severity = severityOf(profile.signal, profile.pictograms, [...stmts.keys()]);
-  if (profile.severity === "unknown" && SAFE_CIDS.has(cid)) profile.severity = "none";
+  if (!profile.signal && !profile.pictograms.length && !profile.statements.length) {
+    // the section existed but carried nothing of substance
+    profile.basis = SAFE_CIDS.has(cid) ? "reference-safe" : "no-ghs-record";
+    profile.severity = SAFE_CIDS.has(cid) ? "none" : "unknown";
+    return profile;
+  }
+  profile.basis = "primary-classification";
+  profile.notifierNote = "GHS primary classification; minority-notifier statements (<25%) excluded";
+  if (profile.severity === "unknown" && SAFE_CIDS.has(cid)) {
+    profile.severity = "none";
+    profile.basis = "reference-safe";
+  }
   return profile;
 }
 
@@ -254,9 +326,11 @@ export function greenScore(h: SimilarHit): { score: number; notes: string[] } {
 // ---- sourcing ----
 
 export async function getViability(cid: number): Promise<ViabilityReport> {
+  const vUrl = ep.vendors(cid);
+  const pUrl = ep.patents(cid);
   const [vendors, patents] = await Promise.all([
-    getJSON<{ Record?: { Section?: PugSection[] } }>(ep.vendors(cid)),
-    getJSON<{ InformationList?: { Information?: { PatentID?: string[] }[] } }>(ep.patents(cid)),
+    getJSON<{ Record?: { Section?: PugSection[] } }>(vUrl),
+    getJSON<{ InformationList?: { Information?: { PatentID?: string[] }[] } }>(pUrl),
   ]);
 
   let vendorCount: number | null = null;
@@ -285,6 +359,7 @@ export async function getViability(cid: number): Promise<ViabilityReport> {
     patentCount,
     verdict: viabilityVerdict(vendorCount, patentCount),
     sourceUrls: [ep.page(cid)],
+    prov: provFor(vUrl, false),
   };
 }
 
@@ -322,14 +397,19 @@ export async function getUses(cid: number): Promise<string[]> {
 
 // ---- description / synonyms ----
 
-export async function getDescription(cid: number): Promise<{ text: string; source: string } | null> {
-  const json = await getJSON<{ InformationList?: { Information?: { Description?: string; DescriptionSourceName?: string }[] } }>(
-    ep.description(cid),
-  );
+export async function getDescription(
+  cid: number,
+): Promise<{ text: string; source: string; prov: Provenance } | null> {
+  const url = ep.description(cid);
+  const json = await getJSON<{ InformationList?: { Information?: { Description?: string; DescriptionSourceName?: string }[] } }>(url);
   const infos = json?.InformationList?.Information ?? [];
   const withText = infos.find((i) => i.Description);
   if (!withText?.Description) return null;
-  return { text: withText.Description, source: withText.DescriptionSourceName ?? "PubChem" };
+  return {
+    text: withText.Description,
+    source: withText.DescriptionSourceName ?? "PubChem",
+    prov: provFor(url, false),
+  };
 }
 
 export async function getSynonyms(cid: number): Promise<string[]> {
@@ -371,5 +451,6 @@ export async function getBio(cid: number): Promise<BioReport> {
     targets: [...targets].slice(0, 8),
     pharmClass,
     sourceUrls: [ep.page(cid)],
+    prov: provFor(ep.assaySummary(cid), false),
   };
 }

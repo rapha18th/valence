@@ -5,27 +5,10 @@
 import { getState, setStatus, note, activity } from "../store/store.ts";
 import { BY_SYMBOL } from "../data/elements.ts";
 import { toast } from "../ui/toasts.ts";
-import { TOOL_EXEC } from "../webmcp/register.ts";
+import { invokeTool } from "../webmcp/invoke.ts";
 
-async function call(name: string, args: Record<string, unknown> = {}): Promise<string> {
-  // prefer the Chromium executeTool path when the runtime offers it
-  const doc = (document as any).modelContext;
-  if (doc?.executeTool && doc?.getTools) {
-    try {
-      const tools = await doc.getTools();
-      const descr = tools.find((t: any) => t.name === name);
-      if (descr) {
-        const out = await doc.executeTool(descr, JSON.stringify(args));
-        const parsed = out == null ? null : JSON.parse(out);
-        return parsed?.content?.[0]?.text ?? "";
-      }
-    } catch { /* fall through to local exec */ }
-  }
-  const exec = TOOL_EXEC.get(name);
-  if (!exec) throw new Error(`unknown tool ${name}`);
-  const r = await exec(args);
-  return r.content?.[0]?.text ?? "";
-}
+const call = invokeTool;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // element-symbol + count formula, e.g. "CO2", "H2SO4", "C6H12O6"
 function parseFormula(s: string): Record<string, number> | null {
@@ -59,10 +42,25 @@ export async function runOperator(text: string) {
         if (syms.length) constraints.elements = syms;
       }
       if (/non[\s-]?toxic|less toxic|safe|green/.test(low)) constraints.nonToxic = true;
-      const out = await call("build_to_constraints", { goal: t, constraints });
-      toast("Build ranked. See the notebook.");
-      setStatus("Agent: build complete.");
-      return out;
+      const startText = await call("build_to_constraints", { goal: t, constraints });
+      const jobId = /\b(bld_[a-z0-9]+)\b/.exec(startText)?.[1];
+      // stream status: poll the same tool an external agent would
+      let last = "";
+      for (let i = 0; i < 80; i++) {
+        await sleep(500);
+        const st = await call("get_build_status", jobId ? { jobId } : {});
+        last = st;
+        const b = getState().build;
+        if (b && b.status !== "running") break;
+      }
+      const b = getState().build;
+      if (b?.status === "done") {
+        toast(b.partial ? "Build ranked (partial — time budget)." : "Build ranked. See the panel.");
+        setStatus(`Agent: build ${b.id} complete.`);
+      } else if (b?.status === "cancelled") {
+        toast("Build stopped.");
+      }
+      return last.split("\n")[0] || startText;
     }
 
     // ---- greener alternatives ----

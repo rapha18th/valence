@@ -5,7 +5,7 @@
 import type {
   State, NotebookEntry, Actor, AgentActivity, MoleculeProps, HazardProfile,
   SimilarHit, ViabilityReport, BioReport, CandidateScore, StageMode, BondPrediction,
-  Comparison,
+  Comparison, BuildJob, RecoveryCard,
 } from "./types.ts";
 import { predictBond } from "../chem/bonding.ts";
 
@@ -33,6 +33,10 @@ const state: State = {
   uses: null,
   comparison: null,
   candidates: null,
+
+  build: null,
+  recovery: null,
+  trace: [],
 
   notebook: [],
   status: "Ready. Press two element keys, or ask your agent.",
@@ -184,6 +188,49 @@ export function setCandidates(c: CandidateScore[] | null) {
   emit();
 }
 
+export function setBuild(b: BuildJob | null) {
+  state.build = b ? { ...b } : null;
+  emit();
+}
+
+export function setRecovery(r: RecoveryCard | null) {
+  state.recovery = r;
+  emit();
+}
+
+let traceSeq = 0;
+export function pushTrace(t: { name: string; args: unknown; actor: Actor }): string {
+  const id = `t${Date.now()}-${traceSeq++}`;
+  state.trace.unshift({
+    id, name: t.name, actor: t.actor, args: t.args,
+    startedAt: Date.now(), endedAt: null, durationMs: null,
+    ok: null, retries: 0, output: null, error: null,
+  });
+  if (state.trace.length > 60) state.trace.pop();
+  emit();
+  return id;
+}
+
+export function endTrace(
+  id: string,
+  patch: { ok: boolean; output?: string | null; error?: string | null; retries?: number },
+) {
+  const e = state.trace.find((x) => x.id === id);
+  if (!e) return;
+  e.endedAt = Date.now();
+  e.durationMs = e.endedAt - e.startedAt;
+  e.ok = patch.ok;
+  if (patch.output !== undefined) e.output = patch.output;
+  if (patch.error !== undefined) e.error = patch.error;
+  if (patch.retries !== undefined) e.retries = patch.retries;
+  emit();
+}
+
+export function clearTrace() {
+  state.trace = [];
+  emit();
+}
+
 export function resetCanvas() {
   state.selection = [];
   state.armed = false;
@@ -198,6 +245,8 @@ export function resetCanvas() {
   state.uses = null;
   state.comparison = null;
   state.candidates = null;
+  state.build = null;
+  state.recovery = null;
   state.status = "Canvas cleared.";
   emit();
 }

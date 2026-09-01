@@ -4,6 +4,25 @@ export type Actor = "person" | "agent";
 
 export type StageMode = "empty" | "2d" | "3d";
 
+// ---- provenance & confidence ----
+// Every claim Valence renders carries where it came from and when, so a human
+// (or an agent) can tell live PubChem data from a cached copy, from the bundled
+// offline set, from a local computation, or from "we could not check".
+export type ProvSource =
+  | "pubchem-live"
+  | "pubchem-cache"
+  | "bundled"
+  | "computed"
+  | "unavailable";
+
+export interface Provenance {
+  source: ProvSource;
+  fetchedAt: number | null; // epoch ms of the underlying fetch; null for bundled/computed
+  detail?: string; // e.g. "HTTP 503", "offline reference set"
+}
+
+export type Confidence = "high" | "medium" | "low";
+
 export interface ElementDef {
   z: number;
   symbol: string;
@@ -43,17 +62,29 @@ export interface MoleculeProps {
   hba: number | null;
   rotatable: number | null;
   complexity: number | null;
+  prov?: Provenance;
 }
 
 export type HazardSeverity = "none" | "low" | "moderate" | "high" | "severe" | "unknown";
 
+// what the hazard read is actually based on, so the UI never states an
+// absolute like "safe" — only what the evidence supports.
+export type HazardBasis =
+  | "primary-classification" // GHS block parsed from PubChem
+  | "no-ghs-record" // PubChem answered, nothing classified
+  | "source-unavailable" // could not reach PubChem
+  | "reference-safe"; // bundled simple molecule, no classification expected
+
 export interface HazardProfile {
   cid: number;
   severity: HazardSeverity;
+  basis: HazardBasis;
   signal: string | null; // "Danger" | "Warning" | null
   pictograms: HazardPictogram[];
   statements: { code: string; text: string }[];
+  notifierNote?: string; // e.g. "primary classification only; minority notifiers excluded"
   sourceUrl: string;
+  prov?: Provenance;
 }
 
 export type HazardPictogram =
@@ -77,6 +108,7 @@ export interface SimilarHit {
   xlogp: number | null;
   greenScore?: number; // 0..100, higher is greener
   greenNotes?: string[];
+  prov?: Provenance;
 }
 
 export interface ViabilityReport {
@@ -85,6 +117,7 @@ export interface ViabilityReport {
   patentCount: number | null;
   verdict: string;
   sourceUrls: string[];
+  prov?: Provenance;
 }
 
 export interface BioReport {
@@ -93,6 +126,7 @@ export interface BioReport {
   targets: string[];
   pharmClass: string[];
   sourceUrls: string[];
+  prov?: Provenance;
 }
 
 export interface NotebookEntry {
@@ -110,14 +144,84 @@ export interface AgentActivity {
   label: string;
 }
 
+export interface ScoreTerm {
+  label: string;
+  delta: number; // signed contribution, in points
+}
+
 export interface CandidateScore {
   cid: number;
   name: string;
   formula: string;
   smiles: string;
-  score: number; // 0..100
-  reasons: string[];
+  score: number; // 0..100, always clamped
+  base: number; // starting score before terms (for the stacked bar)
+  breakdown: ScoreTerm[]; // every signed contribution, sums to score within clamp
+  reasons: string[]; // human sentences, derived from the breakdown
   pass: boolean;
+  rejected?: string; // the single disqualifying reason when pass is false
+  hazardLabel?: string; // evidence-based, e.g. "GHS Warning: H319" or "no GHS record"
+  weight: number | null;
+  tpsa: number | null;
+  xlogp: number | null;
+  hbd: number | null;
+  hba: number | null;
+  prov?: Provenance;
+}
+
+// ---- tool trace (the agent's activity, made inspectable) ----
+export interface TraceEntry {
+  id: string;
+  name: string;
+  actor: Actor;
+  args: unknown;
+  startedAt: number;
+  endedAt: number | null;
+  durationMs: number | null;
+  ok: boolean | null; // null while running
+  retries: number; // PubChem retries consumed during the call
+  output: string | null; // truncated result text
+  error: string | null;
+}
+
+// ---- build job (async constraint solve) ----
+export type BuildStatus = "running" | "done" | "cancelled" | "error";
+
+export interface BuildConstraints {
+  elements?: string[];
+  period?: number;
+  nonToxic?: boolean;
+  maxWeight?: number;
+  maxLogP?: number;
+}
+
+export interface BuildJob {
+  id: string;
+  goal: string;
+  constraints: BuildConstraints;
+  status: BuildStatus;
+  phase: string; // human label of the current step
+  progress: { done: number; total: number };
+  startedAt: number;
+  endedAt: number | null;
+  candidates: CandidateScore[]; // ranked; settles as the job runs
+  winnerCid: number | null;
+  partial: boolean; // true if a time budget cut the hazard sweep short
+  error: string | null;
+}
+
+// ---- recovery card (an empty/failed result the human can act on) ----
+export interface RecoveryAction {
+  label: string;
+  tool: string;
+  args: Record<string, unknown>;
+}
+
+export interface RecoveryCard {
+  id: string;
+  title: string;
+  detail: string;
+  actions: RecoveryAction[];
 }
 
 export interface BondPrediction {
@@ -160,6 +264,10 @@ export interface State {
   uses: string[] | null;
   comparison: Comparison | null;
   candidates: CandidateScore[] | null;
+
+  build: BuildJob | null;
+  recovery: RecoveryCard | null;
+  trace: TraceEntry[];
 
   notebook: NotebookEntry[];
   status: string;

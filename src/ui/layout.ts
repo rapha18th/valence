@@ -4,6 +4,7 @@ import { mountCommandBar } from "./command-bar.ts";
 import { mountPeriodicTable } from "./periodic-table.ts";
 import { mountWorkbenchBar } from "./workbench-bar.ts";
 import { mountStage } from "./stage.ts";
+import { mountBuildPanel } from "./build-panel.ts";
 import { mountNotebook } from "./notebook-rail.ts";
 
 export function mountLayout(app: HTMLElement) {
@@ -15,6 +16,7 @@ export function mountLayout(app: HTMLElement) {
   mountPeriodicTable(main);
   mountWorkbenchBar(main);
   mountStage(main);
+  mountBuildPanel(main);
   body.append(main);
   mountNotebook(body);
   bench.append(body);
