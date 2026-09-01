@@ -164,15 +164,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
     radial-gradient(900px 500px at 50% -20%, #ffffff06, transparent 70%),
     var(--bench-900);
   padding: 12px clamp(10px, 2vw, 24px);
-  max-height: clamp(240px, 42vh, 520px);
+  max-height: clamp(300px, 52vh, 640px);
   overflow: auto;
+  /* justify-content centres horizontally; align-content stays at start so the
+     first row is never pushed above the scroll origin and clipped. */
   display: grid;
-  place-content: center;
+  justify-content: center;
+  align-content: start;
 }
 .ptable {
   display: grid;
-  grid-template-columns: repeat(18, minmax(26px, 47px));
-  grid-auto-rows: minmax(26px, 47px);
+  grid-template-columns: repeat(18, minmax(22px, 46px));
+  grid-auto-rows: minmax(22px, 46px);
   gap: 4px;
 }
 .pcell {
@@ -344,6 +347,58 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .chip[aria-pressed="true"] { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 50%, transparent); }
 .chip--max { font-size: 13px; line-height: 1; padding: 4px 8px; }
 
+/* ---------- side-by-side comparison ---------- */
+.stage__cmp {
+  position: absolute; inset: 0; z-index: 7;
+  display: grid; grid-template-rows: auto 1fr auto;
+  background:
+    radial-gradient(700px 460px at 50% 30%, color-mix(in srgb, var(--signal) 8%, transparent), transparent 70%),
+    linear-gradient(180deg, #1a1c1f, #17181b 60%, #141517);
+  padding: 12px 16px 0;
+}
+.stage__cmp-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.stage__cmp-title {
+  font-family: var(--font-mono); font-size: var(--step-1); color: #f3f1ec;
+}
+.stage__cmp-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+  background: #33373d; min-height: 0; margin: 10px 0;
+  border: 1px solid #33373d; border-radius: var(--radius-ctl); overflow: hidden;
+}
+.stage__cmp-pane {
+  position: relative; background: #1c1e21; padding: 12px 14px;
+  display: flex; flex-direction: column; min-height: 0; overflow: auto;
+}
+.stage__cmp-tag {
+  position: absolute; top: 8px; right: 10px;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
+  color: #06181d; background: var(--signal); padding: 1px 6px; border-radius: 3px; font-weight: 700;
+}
+.stage__cmp-name { color: #f3f1ec; font-size: var(--step-1); }
+.stage__cmp-formula { font-family: var(--font-mono); font-size: var(--step--1); color: #8d887e; margin-bottom: 6px; }
+.stage__cmp-svg { width: 100%; max-height: 200px; margin: 4px auto 8px; filter: drop-shadow(0 6px 16px #0006); }
+.stage__cmp-props {
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  font-family: var(--font-mono); font-size: var(--step--1); color: #8d887e;
+}
+.stage__cmp-props b { color: #f3f1ec; font-variant-numeric: tabular-nums; }
+.stage__cmp-desc { font-size: var(--step--1); color: #c6c1b8; line-height: 1.5; margin: 8px 0 0; }
+.stage__cmp-desc--muted { color: #6b675f; font-style: italic; }
+.stage__cmp-diff {
+  display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline;
+  padding: 8px 2px 10px;
+  font-family: var(--font-mono); font-size: var(--step--1); color: #c6c1b8;
+}
+.stage__cmp-diff .k { color: #8d887e; text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; }
+.stage__cmp-diff .dup { color: #6faf7a; }
+.stage__cmp-diff .ddn { color: #d9a441; }
+.stage__cmp-diff .d0 { color: #8d887e; }
+@media (max-width: 640px) {
+  .stage__cmp-grid { grid-template-columns: 1fr; }
+}
+
 /* property strip */
 .props {
   display: flex; flex-wrap: wrap; gap: 1px;
@@ -408,6 +463,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   overflow: hidden; margin-bottom: 5px;
 }
 .compare__score i { display: block; height: 100%; background: var(--signal); }
+.compare__card--clickable { cursor: pointer; transition: border-color var(--spring-fast), transform var(--spring-fast); }
+.compare__card--clickable:hover { border-color: var(--signal); transform: translateY(-2px); }
+.compare__card--clickable::after {
+  content: "vs"; position: absolute; top: 6px; right: 8px;
+  font-family: var(--font-mono); font-size: 9px; color: var(--signal);
+}
+.compare__card { position: relative; }
 .compare__card[data-pass="false"] { opacity: 0.6; }
 .compare__card[data-pass="false"] .compare__score i { background: var(--warn-2); }
 

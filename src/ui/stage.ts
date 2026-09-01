@@ -1,8 +1,9 @@
 import { el, clear, fmt } from "../lib/dom.ts";
-import { getState, subscribe, setStage } from "../store/store.ts";
+import { getState, subscribe, setStage, setComparison } from "../store/store.ts";
 import { sfx } from "../lib/sound.ts";
 import { drawStructureSvg } from "../lib/structure2d.ts";
-import type { MoleculeProps } from "../store/types.ts";
+import * as ops from "../webmcp/ops.ts";
+import type { MoleculeProps, CompareSide } from "../store/types.ts";
 
 export function mountStage(root: HTMLElement) {
   const stage = el("div", { class: "stage", "data-mode": "empty" });
@@ -60,7 +61,8 @@ export function mountStage(root: HTMLElement) {
   const props = el("div", { class: "props" });
 
   const uses = el("div", { class: "stage__uses", hidden: true });
-  stage.append(scene, title, uses, controls, hazard, compare, props);
+  const cmp = el("div", { class: "stage__cmp", hidden: true });
+  stage.append(scene, cmp, title, uses, controls, hazard, compare, props);
   root.append(stage);
 
   let viewer: any = null;
@@ -180,7 +182,8 @@ export function mountStage(root: HTMLElement) {
   }
 
   function renderCompare() {
-    const { similars, candidates } = getState();
+    const { similars, candidates, props: cur } = getState();
+    const isSimilar = !candidates?.length && similars.length > 0;
     const list = candidates?.length
       ? candidates.map((c) => ({ name: c.name, formula: c.formula, score: c.score, pass: c.pass, notes: c.reasons }))
       : similars.map((s) => ({ name: s.name, formula: s.formula, score: s.greenScore ?? 0, pass: true, notes: s.greenNotes ?? [] }));
@@ -188,22 +191,101 @@ export function mountStage(root: HTMLElement) {
     compare.hidden = false;
     clear(compare);
     for (const it of list.slice(0, 4)) {
-      compare.append(el("div", { class: "compare__card", "data-pass": String(it.pass) }, [
+      const card = el("div", { class: "compare__card", "data-pass": String(it.pass) }, [
         el("b", { text: it.name.length > 22 ? it.name.slice(0, 21) + "…" : it.name }),
         el("span", { class: "f", text: it.formula }),
         el("div", { class: "compare__score" }, [el("i", { style: `width:${Math.round(it.score)}%` })]),
         el("div", { class: "hazard__stmts", text: (it.notes[0] ?? "").slice(0, 60) }),
-      ]));
+      ]);
+      if (isSimilar && cur) {
+        card.classList.add("compare__card--clickable");
+        card.title = `Compare ${cur.name} vs ${it.name}`;
+        card.addEventListener("click", () => void ops.compareCompounds(cur.name, it.name, "person"));
+      }
+      compare.append(card);
     }
+  }
+
+  function paneStructure(canvasEl: SVGSVGElement, side: CompareSide) {
+    if (side.props.smiles) {
+      drawStructureSvg(side.props.smiles, canvasEl, getState().theme === "light" ? "light" : "dark");
+    }
+  }
+  const cmpProps = (p: MoleculeProps) =>
+    `<span>MW <b>${fmt(p.weight, 2)}</b></span>` +
+    `<span>TPSA <b>${fmt(p.tpsa, 1)}</b></span>` +
+    `<span>logP <b>${fmt(p.xlogp, 2)}</b></span>` +
+    `<span>HBD/HBA <b>${fmt(p.hbd, 0)}/${fmt(p.hba, 0)}</b></span>` +
+    `<span>rot. bonds <b>${fmt(p.rotatable, 0)}</b></span>`;
+
+  function renderCmpView() {
+    const c = getState().comparison;
+    if (!c) { cmp.hidden = true; return; }
+    cmp.hidden = false;
+    clear(cmp);
+
+    const head = el("div", { class: "stage__cmp-head" }, [
+      el("span", { class: "stage__cmp-title", text: `${c.a.props.name}  vs  ${c.b.props.name}` }),
+    ]);
+    const close = el("button", { class: "chip", "aria-label": "Close comparison", text: "✕ close" });
+    close.addEventListener("click", () => setComparison(null));
+    head.append(close);
+
+    const grid = el("div", { class: "stage__cmp-grid" });
+    for (const [label, side] of [["A", c.a], ["B", c.b]] as const) {
+      const p = side.props;
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg") as SVGSVGElement;
+      svg.setAttribute("viewBox", "0 0 360 300");
+      svg.setAttribute("class", "stage__cmp-svg");
+      paneStructure(svg, side);
+      const pane = el("div", { class: "stage__cmp-pane" }, [
+        el("div", { class: "stage__cmp-tag", text: label }),
+        el("b", { class: "stage__cmp-name", text: p.name }),
+        el("span", { class: "stage__cmp-formula", text: `${p.formula} · CID ${p.cid}` }),
+        svg,
+        el("div", { class: "stage__cmp-props", html: cmpProps(p) }),
+        side.description
+          ? el("p", { class: "stage__cmp-desc", text: side.description.length > 260 ? side.description.slice(0, 257) + "…" : side.description })
+          : el("p", { class: "stage__cmp-desc stage__cmp-desc--muted", text: "No PubChem description on file." }),
+      ]);
+      grid.append(pane);
+    }
+
+    const a = c.a.props, b = c.b.props;
+    const delta = (x: number | null, y: number | null, unit = "") => {
+      if (x == null || y == null) return `<span class="d0">—</span>`;
+      const dd = y - x;
+      const cls = dd > 0 ? "dup" : dd < 0 ? "ddn" : "d0";
+      const v = Number.isInteger(dd) ? dd : dd.toFixed(1);
+      return `<span class="${cls}">${dd >= 0 ? "+" : ""}${v}${unit}</span>`;
+    };
+    const diff = el("div", { class: "stage__cmp-diff", html:
+      `<span class="k">Δ&nbsp;B−A</span>` +
+      `<span>MW ${delta(a.weight, b.weight)}</span>` +
+      `<span>TPSA ${delta(a.tpsa, b.tpsa)}</span>` +
+      `<span>logP ${delta(a.xlogp, b.xlogp)}</span>` +
+      `<span>HBD ${delta(a.hbd, b.hbd)}</span>` +
+      `<span>HBA ${delta(a.hba, b.hba)}</span>` +
+      `<span>rot ${delta(a.rotatable, b.rotatable)}</span>`,
+    });
+
+    cmp.append(head, grid, diff);
   }
 
   function render() {
     const s = getState();
+    const comparing = !!s.comparison;
+    scene.style.visibility = comparing ? "hidden" : "";
+    controls.hidden = comparing;
+    props.hidden = comparing;
+    hazard.hidden = hazard.hidden || comparing;
     stage.dataset.mode = s.stageMode;
-    empty.hidden = s.stageMode !== "empty";
+    empty.hidden = comparing || s.stageMode !== "empty";
     t2d.setAttribute("aria-pressed", String(s.stageMode === "2d"));
     t3d.setAttribute("aria-pressed", String(s.stageMode === "3d"));
     t3d.toggleAttribute("disabled", !s.sdf3d);
+    renderCmpView();
+    if (comparing) { clear(title); return; }
 
     clear(title);
     if (s.props) {

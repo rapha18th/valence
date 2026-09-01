@@ -4,7 +4,7 @@
 
 import {
   note, setSelection, setProps, setSdf3d, setHazard, setSimilars, setViability,
-  setBio, setUses, setCandidates, resetCanvas, setStatus, activity, getState,
+  setBio, setUses, setComparison, setCandidates, resetCanvas, setStatus, activity, getState,
 } from "../store/store.ts";
 import { ep } from "../pubchem/endpoints.ts";
 import {
@@ -224,6 +224,60 @@ export async function industrialViability(cid: number, actor: Actor): Promise<Re
   return ok(`Vendors: ${v.vendorCount ?? "unknown"}, patent references: ${v.patentCount ?? "unknown"}. ${v.verdict}`, v);
 }
 
+// ---------- resolve a free-form query to props ----------
+async function resolveQuery(q: string): Promise<MoleculeProps | null> {
+  const t = q.trim();
+  if (/^\d+$/.test(t)) return getOneProperty(parseInt(t, 10));
+  const looksSmiles = /[=#()\[\]]/.test(t) && !/\s/.test(t);
+  const by: ResolveBy = looksSmiles ? "smiles" : "name";
+  let cids = await resolveCids(t, by);
+  if (!cids.length && by === "name") cids = await resolveCids(t, "formula");
+  if (!cids.length) return null;
+  return getOneProperty(cids[0]);
+}
+
+// ---------- side-by-side comparison ----------
+export async function compareCompounds(aQ: string, bQ: string, actor: Actor): Promise<Res> {
+  setStatus(`Comparing ${aQ} vs ${bQ}…`);
+  activity({ kind: "target", selector: ".stage", label: `compare ${aQ} vs ${bQ}` });
+  const [pa, pb] = await Promise.all([resolveQuery(aQ), resolveQuery(bQ)]);
+  if (!pa) return err(`Could not resolve "${aQ}".` + (pubchemHealthy() ? "" : " " + pubchemStatusNote()));
+  if (!pb) return err(`Could not resolve "${bQ}".` + (pubchemHealthy() ? "" : " " + pubchemStatusNote()));
+  if (pa.cid === pb.cid) return err(`"${aQ}" and "${bQ}" are the same compound (CID ${pa.cid}).`);
+
+  const [da, db] = await Promise.all([getDescription(pa.cid), getDescription(pb.cid)]);
+  setComparison({
+    a: { props: pa, description: da?.text ?? null },
+    b: { props: pb, description: db?.text ?? null },
+  });
+  setSdf3d(null); setCandidates(null); setSimilars([]);
+
+  const d = (x: number | null, y: number | null) => {
+    if (x == null || y == null) return "?";
+    const delta = y - x;
+    return (delta >= 0 ? "+" : "") + (Number.isInteger(delta) ? String(delta) : delta.toFixed(1));
+  };
+  const diff =
+    `Δ (B−A): MW ${d(pa.weight, pb.weight)}, TPSA ${d(pa.tpsa, pb.tpsa)}, ` +
+    `logP ${d(pa.xlogp, pb.xlogp)}, HBD ${d(pa.hbd, pb.hbd)}, HBA ${d(pa.hba, pb.hba)}, ` +
+    `rot.bonds ${d(pa.rotatable, pb.rotatable)}`;
+  note(actor, `Compared: ${pa.name} vs ${pb.name}`, diff,
+    { label: `CID ${pa.cid} / ${pb.cid}`, url: ep.page(pa.cid) });
+  setStatus(`${pa.name} vs ${pb.name}.`);
+  return ok(
+    `A ${pa.name} (${pa.formula}, CID ${pa.cid}) — MW ${pa.weight}, TPSA ${pa.tpsa}, logP ${pa.xlogp}, HBD/HBA ${pa.hbd}/${pa.hba}.\n` +
+    `B ${pb.name} (${pb.formula}, CID ${pb.cid}) — MW ${pb.weight}, TPSA ${pb.tpsa}, logP ${pb.xlogp}, HBD/HBA ${pb.hbd}/${pb.hba}.\n` +
+    diff,
+    { a: pa, b: pb },
+  );
+}
+
+export function closeComparison(actor: Actor): Res {
+  setComparison(null);
+  note(actor, "Closed comparison", "back to single view");
+  return ok("Comparison closed.");
+}
+
 // ---------- description (beginner-friendly summary) ----------
 export async function describeCompound(cid: number, actor: Actor): Promise<Res> {
   setStatus("Reading PubChem description…");
@@ -289,6 +343,10 @@ export function getCanvasState(): Res {
     similars: s.similars.map((h) => ({ cid: h.cid, name: h.name, greenScore: h.greenScore })),
     uses: s.uses,
     viability: s.viability,
+    comparison: s.comparison && {
+      a: { cid: s.comparison.a.props.cid, name: s.comparison.a.props.name, formula: s.comparison.a.props.formula },
+      b: { cid: s.comparison.b.props.cid, name: s.comparison.b.props.name, formula: s.comparison.b.props.formula },
+    },
     candidates: s.candidates,
     notebook: s.notebook.slice(0, 12).map((e) => ({ actor: e.actor, action: e.action, detail: e.detail, cite: e.citation?.url })),
   };

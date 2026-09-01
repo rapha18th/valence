@@ -76,6 +76,19 @@ export async function runOperator(text: string) {
       return out;
     }
 
+    // ---- compare: "compare A and B", "A vs B", "aspirin versus ibuprofen" ----
+    const vs = t.match(/^\s*compare\s+(.+?)\s+(?:and|with|to|vs\.?|versus)\s+(.+?)\s*$/i)
+      ?? t.match(/^\s*(.+?)\s+(?:vs\.?|versus)\s+(.+?)\s*$/i);
+    if (vs) {
+      const a = vs[1].trim(), b = vs[2].trim();
+      const cur = getState().props;
+      const resolvedA = /^(this|it|current)$/i.test(a) && cur ? cur.name : a;
+      return await call("compare_compounds", { a: resolvedA, b });
+    }
+    if (/^close (the )?comparison$|^(exit|leave) compare/i.test(low)) {
+      return await call("close_comparison", {});
+    }
+
     // ---- bond check: "will Na and Cl bond", "does helium react with oxygen" ----
     if (/\b(bond|react|combine|join)\b/.test(low) && /\b(will|do(es)?|can|why)\b/.test(low)) {
       const syms = (t.match(/[A-Z][a-z]?/g) ?? []).filter((s) => BY_SYMBOL[s]);
@@ -161,7 +174,7 @@ export async function runOperator(text: string) {
       return out;
     }
 
-    return say("Try: \"will sodium and chlorine bond\", \"make CO2\", \"build a non-toxic polymer precursor from period-2 elements\", \"how hazardous is this\", \"what is it used for\", \"find greener alternatives\", \"explain TPSA\". Your own agent can call any of the 19 tools on document.modelContext directly.");
+    return say("Try: \"will sodium and chlorine bond\", \"make CO2\", \"aspirin vs ibuprofen\", \"build a non-toxic polymer precursor from period-2 elements\", \"how hazardous is this\", \"what is it used for\", \"find greener alternatives\", \"explain TPSA\". Your own agent can call any of the 21 tools on document.modelContext directly.");
   } catch (e) {
     activity({ kind: "done", label: "Agent: hit an error." });
     setStatus("Agent: error — see console.");
