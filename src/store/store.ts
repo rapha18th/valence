@@ -137,13 +137,15 @@ export function setStage(mode: StageMode) {
 
 export function setProps(props: MoleculeProps | null) {
   state.props = props;
-  if (props) state.stageMode = state.stageMode === "3d" ? "3d" : "2d";
+  // a new compound starts flat; a caller bumps to 3D once its conformer loads
+  if (props) { state.stageMode = "2d"; state.sdf3d = null; }
   emit();
 }
 
 export function setSdf3d(sdf: string | null) {
   state.sdf3d = sdf;
   if (sdf) state.stageMode = "3d";
+  else if (state.stageMode === "3d") state.stageMode = "2d";
   emit();
 }
 
