@@ -72,6 +72,31 @@ export const FALLBACK: F[] = [
   { cid: 14792, name: "Magnesium Oxide", formula: "MgO", smiles: "[Mg]=O", weight: 40.30, tpsa: 17.1, xlogp: null, hbd: 0, hba: 1, rotatable: 0, complexity: 2, aliases: ["magnesium oxide", "mgo", "magnesia"] },
   { cid: 14778, name: "Calcium Oxide", formula: "CaO", smiles: "[Ca]=O", weight: 56.08, tpsa: 17.1, xlogp: null, hbd: 0, hba: 1, rotatable: 0, complexity: 2, aliases: ["calcium oxide", "quicklime", "cao"] },
   { cid: 5235, name: "Sodium Fluoride", formula: "FNa", smiles: "[F-].[Na+]", weight: 41.99, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["sodium fluoride", "naf", "fna"] },
+
+  // common binary compounds a beginner reaches by picking two element keys.
+  // Bundled so the Combine flow keeps working when PubChem is 503-storming.
+  { cid: 166630, name: "Lithium Oxide", formula: "Li2O", smiles: "[Li+].[Li+].[O-2]", weight: 29.88, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 0, aliases: ["lithium oxide", "li2o", "lithia"] },
+  { cid: 73974, name: "Sodium Oxide", formula: "Na2O", smiles: "[O-2].[Na+].[Na+]", weight: 61.98, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 0, aliases: ["sodium oxide", "na2o"] },
+  { cid: 25522, name: "Potassium Oxide", formula: "K2O", smiles: "[K+].[K+].[O-2]", weight: 94.20, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 0, aliases: ["potassium oxide", "k2o"] },
+  { cid: 9989226, name: "Aluminium Oxide", formula: "Al2O3", smiles: "[O-2].[O-2].[O-2].[Al+3].[Al+3]", weight: 101.96, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 0, aliases: ["aluminium oxide", "aluminum oxide", "alumina", "al2o3", "corundum"] },
+  { cid: 4873, name: "Potassium Chloride", formula: "ClK", smiles: "[Cl-].[K+]", weight: 74.55, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["potassium chloride", "kcl", "clk", "sylvite"] },
+  { cid: 5284359, name: "Calcium Chloride", formula: "CaCl2", smiles: "[Cl-].[Cl-].[Ca+2]", weight: 110.98, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["calcium chloride", "cacl2", "cl2ca"] },
+  { cid: 5360315, name: "Magnesium Chloride", formula: "MgCl2", smiles: "[Cl-].[Cl-].[Mg+2]", weight: 95.21, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["magnesium chloride", "mgcl2", "cl2mg"] },
+  { cid: 24564, name: "Aluminium Chloride", formula: "AlCl3", smiles: "[Cl-].[Cl-].[Cl-].[Al+3]", weight: 133.34, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 8, aliases: ["aluminium chloride", "aluminum chloride", "alcl3", "alcl3"] },
+  { cid: 253877, name: "Potassium Bromide", formula: "BrK", smiles: "[Br-].[K+]", weight: 119.00, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["potassium bromide", "kbr", "brk"] },
+  { cid: 4875, name: "Potassium Iodide", formula: "IK", smiles: "[K+].[I-]", weight: 166.00, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["potassium iodide", "ki", "ik"] },
+  { cid: 253881, name: "Sodium Bromide", formula: "BrNa", smiles: "[Na+].[Br-]", weight: 102.89, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["sodium bromide", "nabr", "brna"] },
+  { cid: 224478, name: "Lithium Fluoride", formula: "FLi", smiles: "[Li+].[F-]", weight: 25.94, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["lithium fluoride", "lif", "fli"] },
+  { cid: 14798, name: "Sodium Hydroxide", formula: "NaOH", smiles: "[OH-].[Na+]", weight: 40.00, tpsa: 1, xlogp: null, hbd: 1, hba: 1, rotatable: 0, complexity: 2, aliases: ["sodium hydroxide", "lye", "caustic soda", "naoh", "hnao"] },
+  { cid: 14797, name: "Potassium Hydroxide", formula: "KOH", smiles: "[OH-].[K+]", weight: 56.11, tpsa: 1, xlogp: null, hbd: 1, hba: 1, rotatable: 0, complexity: 2, aliases: ["potassium hydroxide", "caustic potash", "koh", "hko"] },
+  { cid: 10112, name: "Calcium Carbonate", formula: "CCaO3", smiles: "C(=O)([O-])[O-].[Ca+2]", weight: 100.09, tpsa: 63.2, xlogp: null, hbd: 0, hba: 3, rotatable: 0, complexity: 18, aliases: ["calcium carbonate", "limestone", "calcite", "caco3", "ccao3"] },
+  { cid: 1119, name: "Sulfur Dioxide", formula: "O2S", smiles: "O=S=O", weight: 64.07, tpsa: 34.8, xlogp: 0.2, hbd: 0, hba: 2, rotatable: 0, complexity: 18.3, aliases: ["sulfur dioxide", "sulphur dioxide", "so2", "o2s"] },
+  { cid: 24682, name: "Sulfur Trioxide", formula: "O3S", smiles: "O=S(=O)=O", weight: 80.06, tpsa: 52.2, xlogp: null, hbd: 0, hba: 3, rotatable: 0, complexity: 40.7, aliases: ["sulfur trioxide", "sulphur trioxide", "so3", "o3s"] },
+  { cid: 281, name: "Carbon Monoxide", formula: "CO", smiles: "[C-]#[O+]", weight: 28.01, tpsa: 17.1, xlogp: null, hbd: 0, hba: 1, rotatable: 0, complexity: 10, aliases: ["carbon monoxide", "co"] },
+  { cid: 948, name: "Nitrous Oxide", formula: "N2O", smiles: "[N-]=[N+]=O", weight: 44.01, tpsa: 28.5, xlogp: null, hbd: 0, hba: 1, rotatable: 0, complexity: 20.5, aliases: ["nitrous oxide", "laughing gas", "n2o", "dinitrogen monoxide"] },
+  { cid: 24524, name: "Fluorine", formula: "F2", smiles: "FF", weight: 38.00, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["fluorine", "difluorine", "f2"] },
+  { cid: 24526, name: "Chlorine", formula: "Cl2", smiles: "ClCl", weight: 70.90, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["chlorine", "dichlorine", "cl2"] },
+  { cid: 14917, name: "Hydrogen Fluoride", formula: "FH", smiles: "F", weight: 20.01, tpsa: 0, xlogp: null, hbd: 1, hba: 0, rotatable: 0, complexity: 2, aliases: ["hydrogen fluoride", "hydrofluoric acid", "hf", "fh"] },
 ];
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
