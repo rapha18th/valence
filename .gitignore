@@ -5,3 +5,7 @@ dist
 .vercel
 *.log
 .DS_Store
+
+# local working notes / decision log — never commit
+ADR.md
+.notes/
