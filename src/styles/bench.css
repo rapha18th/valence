@@ -265,7 +265,21 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .stage__controls {
   position: absolute; top: 12px; right: 12px; z-index: 5;
-  display: flex; gap: 6px;
+  display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 60%;
+}
+.stage__uses {
+  position: absolute; top: 64px; left: 18px; z-index: 4;
+  display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
+  max-width: min(58%, 560px);
+}
+.stage__uses-k {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.14em;
+  color: #8d887e;
+}
+.stage__uses-tag {
+  font-family: var(--font-mono); font-size: 10px; color: #c6c1b8;
+  background: #24262b; border: 1px solid #3a3d45; border-radius: 4px;
+  padding: 2px 7px;
 }
 .chip {
   padding: 4px 9px; border-radius: 999px;

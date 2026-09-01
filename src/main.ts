@@ -16,10 +16,15 @@ mountToasts();
 mountLayout(app);
 mountGhostCursor();
 
-try {
-  const names = registerTools();
-  if (names?.length) setStatus(`Ready. ${names.length} WebMCP tools live. Press two element keys, or ask.`);
-} catch (e) {
-  console.error("WebMCP registration failed", e);
-  setStatus("Ready (WebMCP registration failed; UI still works).");
-}
+registerTools()
+  .then((names) => {
+    if (names.length) {
+      setStatus(`Ready. ${names.length} WebMCP tools on document.modelContext. Press two element keys, or ask.`);
+    } else {
+      setStatus("Ready. WebMCP runtime not detected; the built-in operator still drives the same tools.");
+    }
+  })
+  .catch((e) => {
+    console.error("WebMCP registration failed", e);
+    setStatus("Ready (WebMCP registration failed; UI still works).");
+  });

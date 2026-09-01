@@ -33,12 +33,14 @@ export function mountStage(root: HTMLElement) {
   const t2d = el("button", { class: "chip", "aria-pressed": "false", text: "2D" });
   const t3d = el("button", { class: "chip", "aria-pressed": "false", text: "3D" });
   const tSpin = el("button", { class: "chip", "aria-pressed": "false", text: "spin" });
+  const tLabels = el("button", { class: "chip", "aria-pressed": "true", title: "Atom labels", text: "labels·X" });
   const tMax = el("button", { class: "chip chip--max", "aria-pressed": "false", "aria-label": "Maximise stage", title: "Maximise (Esc to exit)", text: "⤢" });
   t2d.addEventListener("click", () => setStage("2d"));
   t3d.addEventListener("click", () => { if (getState().sdf3d) setStage("3d"); });
   tSpin.addEventListener("click", () => toggleSpin(tSpin));
+  tLabels.addEventListener("click", () => cycleLabels(tLabels));
   tMax.addEventListener("click", () => setMax(stage.dataset.max !== "true"));
-  controls.append(t2d, t3d, tSpin, tMax);
+  controls.append(t2d, t3d, tSpin, tLabels, tMax);
 
   function setMax(on: boolean) {
     stage.dataset.max = String(on);
@@ -57,12 +59,14 @@ export function mountStage(root: HTMLElement) {
   const compare = el("div", { class: "compare", hidden: true });
   const props = el("div", { class: "props" });
 
-  stage.append(scene, title, controls, hazard, compare, props);
+  const uses = el("div", { class: "stage__uses", hidden: true });
+  stage.append(scene, title, uses, controls, hazard, compare, props);
   root.append(stage);
 
   let viewer: any = null;
   let lastSmiles = "";
   let lastSdf = "";
+  let lastTheme = getState().theme;
 
   async function ensureViewer() {
     if (viewer) return viewer;
@@ -86,6 +90,31 @@ export function mountStage(root: HTMLElement) {
     if (viewer) { viewer.spin(!on ? "y" : false); viewer.render(); }
   }
 
+  // 0 = none, 1 = heteroatoms only, 2 = every atom
+  let labelMode = 1;
+  function applyLabels() {
+    if (!viewer) return;
+    try {
+      viewer.removeAllLabels();
+      if (labelMode === 0) { viewer.render(); return; }
+      const dark = getState().theme !== "light";
+      const style = {
+        fontSize: 12, fontColor: dark ? "#f3f1ec" : "#1b1b1b",
+        backgroundColor: dark ? "#000000" : "#ffffff", backgroundOpacity: 0.35,
+        borderThickness: 0, inFront: true, alignment: "center",
+      };
+      const sel = labelMode === 1 ? { not: { elem: ["C", "H"] } } : {};
+      viewer.addPropertyLabels("elem", sel, style);
+      viewer.render();
+    } catch { /* older 3Dmol without addPropertyLabels */ }
+  }
+  function cycleLabels(btn: HTMLElement) {
+    labelMode = (labelMode + 1) % 3;
+    btn.setAttribute("aria-pressed", String(labelMode > 0));
+    btn.textContent = labelMode === 0 ? "labels" : labelMode === 1 ? "labels·X" : "labels·all";
+    applyLabels();
+  }
+
   function draw2d(p: MoleculeProps) {
     if (!p.smiles || p.smiles === lastSmiles) return;
     lastSmiles = p.smiles;
@@ -105,8 +134,9 @@ export function mountStage(root: HTMLElement) {
     v.zoomTo();
     v.render();
     v.zoom(1.6, 500);
+    applyLabels();
     // the scene may have been zero-height at create time; force a resize once
-    setTimeout(() => { try { v.resize(); v.zoomTo(); v.zoom(1.6); v.render(); } catch { /* ignore */ } }, 120);
+    setTimeout(() => { try { v.resize(); v.zoomTo(); v.zoom(1.6); v.render(); applyLabels(); } catch { /* ignore */ } }, 120);
     sfx.confirm();
   }
 
@@ -184,6 +214,23 @@ export function mountStage(root: HTMLElement) {
       draw2d(s.props);
     }
     if (s.sdf3d) void draw3d(s.sdf3d);
+    if (s.theme !== lastTheme) {
+      lastTheme = s.theme;
+      if (lastSmiles) { lastSmiles = ""; if (s.props) draw2d(s.props); }
+      applyLabels();
+    }
+
+    if (s.uses?.length) {
+      uses.hidden = false;
+      clear(uses);
+      uses.append(el("span", { class: "stage__uses-k", text: "USES" }));
+      for (const u of s.uses.slice(0, 6)) {
+        uses.append(el("span", { class: "stage__uses-tag", text: u.length > 46 ? u.slice(0, 44) + "…" : u }));
+      }
+    } else {
+      uses.hidden = true;
+    }
+
     renderProps(s.props);
     renderHazard();
     renderCompare();
