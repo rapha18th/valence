@@ -14,7 +14,8 @@ body {
     var(--bench-950);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 ::selection { background: color-mix(in srgb, var(--signal) 40%, transparent); }
 button { font: inherit; color: inherit; cursor: pointer; }
@@ -23,8 +24,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* ---------- shell ---------- */
 .bench {
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 100dvh;
   gap: 1px;
   background: var(--hair);
 }
@@ -37,7 +38,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .bench__main {
   display: grid;
-  grid-template-rows: auto minmax(240px, 1fr);
+  grid-template-rows: auto minmax(320px, 1fr);
   gap: 1px;
   min-width: 0;
   min-height: 0;
@@ -49,7 +50,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 10px 18px;
+  padding: 8px 18px;
   background: linear-gradient(var(--bench-900), var(--bench-850));
   border-bottom: 1px solid var(--hair);
 }
@@ -107,8 +108,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background:
     radial-gradient(900px 500px at 50% -20%, #ffffff06, transparent 70%),
     var(--bench-900);
-  padding: 14px clamp(10px, 2vw, 24px);
-  max-height: 60vh;
+  padding: 12px clamp(10px, 2vw, 24px);
+  max-height: clamp(240px, 42vh, 520px);
   overflow: auto;
   display: grid;
   place-content: center;
@@ -210,10 +211,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
     radial-gradient(1200px 320px at 50% 122%, #ffffff10, transparent 70%),
     linear-gradient(180deg, var(--scr-1), var(--scr-2) 62%, #141517);
   display: grid;
-  grid-template-rows: 1fr auto;
-  min-height: 0;
+  grid-template-rows: minmax(220px, 1fr) auto;
+  min-height: 320px;
   overflow: hidden;
   border-top: 1px solid #000;
+}
+.stage[data-max="true"] {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  min-height: 100dvh;
+  border-top: 0;
 }
 .stage .stage__empty { color: #7b776e; }
 .stage .stage__title b { color: #f3f1ec; }
@@ -226,7 +234,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .stage .compare__card { background: #24262b; border-color: #3a3d45; }
 .stage .compare__card b { color: #f3f1ec; }
 .stage .compare__score { background: #383b43; }
-.stage__scene { position: relative; min-height: 0; }
+.stage__scene { position: relative; min-height: 210px; }
 .stage__layer { position: absolute; inset: 0; display: grid; place-items: center; }
 .stage__layer canvas { max-width: 100%; max-height: 100%; }
 .stage__svg {
@@ -265,6 +273,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-family: var(--font-mono); font-size: var(--step--1); color: var(--ink-300);
 }
 .chip[aria-pressed="true"] { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 50%, transparent); }
+.chip--max { font-size: 13px; line-height: 1; padding: 4px 8px; }
 
 /* property strip */
 .props {
