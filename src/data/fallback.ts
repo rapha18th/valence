@@ -39,6 +39,39 @@ export const FALLBACK: F[] = [
   { cid: 712, name: "Formaldehyde", formula: "CH2O", smiles: "C=O", weight: 30.026, tpsa: 17.1, xlogp: 0.4, hbd: 0, hba: 1, rotatable: 0, complexity: 10.3, aliases: ["formaldehyde", "methanal", "ch2o"] },
   { cid: 6228, name: "Ethylene", formula: "C2H4", smiles: "C=C", weight: 28.05, tpsa: 0, xlogp: 1.1, hbd: 0, hba: 0, rotatable: 0, complexity: 14.2, aliases: ["ethylene", "ethene", "c2h4"] },
   { cid: 6106, name: "Toluene", formula: "C7H8", smiles: "Cc1ccccc1", weight: 92.14, tpsa: 0, xlogp: 2.7, hbd: 0, hba: 0, rotatable: 0, complexity: 38.9, aliases: ["toluene", "methylbenzene", "c7h8"] },
+
+  // common drugs
+  { cid: 3672, name: "Ibuprofen", formula: "C13H18O2", smiles: "CC(C)Cc1ccc(cc1)C(C)C(=O)O", weight: 206.28, tpsa: 37.3, xlogp: 3.5, hbd: 1, hba: 2, rotatable: 4, complexity: 203, aliases: ["ibuprofen", "c13h18o2"] },
+  { cid: 1983, name: "Acetaminophen", formula: "C8H9NO2", smiles: "CC(=O)Nc1ccc(O)cc1", weight: 151.16, tpsa: 49.3, xlogp: 0.5, hbd: 2, hba: 2, rotatable: 1, complexity: 139, aliases: ["acetaminophen", "paracetamol", "tylenol", "c8h9no2"] },
+
+  // common solvents
+  { cid: 180, name: "Acetone", formula: "C3H6O", smiles: "CC(=O)C", weight: 58.08, tpsa: 17.1, xlogp: -0.2, hbd: 0, hba: 1, rotatable: 0, complexity: 26.3, aliases: ["acetone", "propan-2-one", "c3h6o"] },
+  { cid: 887, name: "Methanol", formula: "CH4O", smiles: "CO", weight: 32.04, tpsa: 20.2, xlogp: -0.5, hbd: 1, hba: 1, rotatable: 0, complexity: 2, aliases: ["methanol", "methyl alcohol", "ch4o", "co"] },
+  { cid: 3776, name: "Isopropyl Alcohol", formula: "C3H8O", smiles: "CC(C)O", weight: 60.10, tpsa: 20.2, xlogp: 0.1, hbd: 1, hba: 1, rotatable: 0, complexity: 15.2, aliases: ["isopropanol", "isopropyl alcohol", "2-propanol", "rubbing alcohol", "c3h8o"] },
+  { cid: 8857, name: "Ethyl Acetate", formula: "C4H8O2", smiles: "CCOC(C)=O", weight: 88.11, tpsa: 26.3, xlogp: 0.7, hbd: 0, hba: 2, rotatable: 2, complexity: 47.1, aliases: ["ethyl acetate", "c4h8o2"] },
+  { cid: 679, name: "Dimethyl Sulfoxide", formula: "C2H6OS", smiles: "CS(=O)C", weight: 78.13, tpsa: 36.3, xlogp: -1.4, hbd: 0, hba: 2, rotatable: 0, complexity: 27.5, aliases: ["dmso", "dimethyl sulfoxide", "c2h6os"] },
+  { cid: 8028, name: "Tetrahydrofuran", formula: "C4H8O", smiles: "C1CCOC1", weight: 72.11, tpsa: 9.2, xlogp: 0.5, hbd: 0, hba: 1, rotatable: 0, complexity: 23.4, aliases: ["thf", "tetrahydrofuran", "oxolane", "c4h8o"] },
+  { cid: 6342, name: "Acetonitrile", formula: "C2H3N", smiles: "CC#N", weight: 41.05, tpsa: 23.8, xlogp: -0.3, hbd: 0, hba: 1, rotatable: 0, complexity: 27.4, aliases: ["acetonitrile", "c2h3n", "mecn"] },
+  { cid: 6212, name: "Chloroform", formula: "CHCl3", smiles: "C(Cl)(Cl)Cl", weight: 119.37, tpsa: 0, xlogp: 1.9, hbd: 0, hba: 0, rotatable: 0, complexity: 8, aliases: ["chloroform", "trichloromethane", "chcl3"] },
+  { cid: 6344, name: "Dichloromethane", formula: "CH2Cl2", smiles: "C(Cl)Cl", weight: 84.93, tpsa: 0, xlogp: 1.3, hbd: 0, hba: 0, rotatable: 0, complexity: 8, aliases: ["dichloromethane", "dcm", "methylene chloride", "ch2cl2"] },
+  { cid: 8058, name: "Hexane", formula: "C6H14", smiles: "CCCCCC", weight: 86.18, tpsa: 0, xlogp: 3.9, hbd: 0, hba: 0, rotatable: 3, complexity: 22.5, aliases: ["hexane", "n-hexane", "c6h14"] },
+  { cid: 3283, name: "Diethyl Ether", formula: "C4H10O", smiles: "CCOCC", weight: 74.12, tpsa: 9.2, xlogp: 0.8, hbd: 0, hba: 1, rotatable: 2, complexity: 15.7, aliases: ["diethyl ether", "ether", "ethoxyethane", "c4h10o"] },
+
+  // acids, salts, small inorganics
+  { cid: 1118, name: "Sulfuric Acid", formula: "H2O4S", smiles: "OS(=O)(=O)O", weight: 98.07, tpsa: 88.6, xlogp: null, hbd: 2, hba: 4, rotatable: 0, complexity: 82.2, aliases: ["sulfuric acid", "h2so4", "h2o4s"] },
+  { cid: 944, name: "Nitric Acid", formula: "HNO3", smiles: "[N+](=O)(O)[O-]", weight: 63.01, tpsa: 66.1, xlogp: null, hbd: 1, hba: 3, rotatable: 0, complexity: 40.5, aliases: ["nitric acid", "hno3"] },
+  { cid: 311, name: "Citric Acid", formula: "C6H8O7", smiles: "OC(=O)CC(O)(CC(=O)O)C(=O)O", weight: 192.12, tpsa: 132, xlogp: -1.7, hbd: 4, hba: 7, rotatable: 5, complexity: 273, aliases: ["citric acid", "c6h8o7"] },
+  { cid: 284, name: "Formic Acid", formula: "CH2O2", smiles: "C(=O)O", weight: 46.03, tpsa: 37.3, xlogp: -0.2, hbd: 1, hba: 2, rotatable: 0, complexity: 10.3, aliases: ["formic acid", "methanoic acid", "ch2o2"] },
+  { cid: 753, name: "Glycerol", formula: "C3H8O3", smiles: "OCC(O)CO", weight: 92.09, tpsa: 60.7, xlogp: -1.8, hbd: 3, hba: 3, rotatable: 2, complexity: 25.8, aliases: ["glycerol", "glycerine", "propane-1,2,3-triol", "c3h8o3"] },
+  { cid: 1176, name: "Urea", formula: "CH4N2O", smiles: "C(=O)(N)N", weight: 60.06, tpsa: 69.1, xlogp: -2.1, hbd: 2, hba: 1, rotatable: 0, complexity: 24.2, aliases: ["urea", "carbamide", "ch4n2o"] },
+  { cid: 5988, name: "Sucrose", formula: "C12H22O11", smiles: "OCC1OC(O)(COC2OC(CO)C(O)C(O)C2O)C(O)C1O", weight: 342.30, tpsa: 190, xlogp: -3.7, hbd: 8, hba: 11, rotatable: 5, complexity: 458, aliases: ["sucrose", "table sugar", "saccharose", "c12h22o11"] },
+  { cid: 784, name: "Hydrogen Peroxide", formula: "H2O2", smiles: "OO", weight: 34.01, tpsa: 40.5, xlogp: -1.4, hbd: 2, hba: 2, rotatable: 0, complexity: 2, aliases: ["hydrogen peroxide", "h2o2", "oo"] },
+  { cid: 977, name: "Oxygen", formula: "O2", smiles: "O=O", weight: 32.00, tpsa: 34.1, xlogp: null, hbd: 0, hba: 2, rotatable: 0, complexity: 2, aliases: ["oxygen", "dioxygen", "o2"] },
+  { cid: 947, name: "Nitrogen", formula: "N2", smiles: "N#N", weight: 28.01, tpsa: 23.8, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 6, aliases: ["nitrogen", "dinitrogen", "n2"] },
+  { cid: 24617, name: "Calcium Fluoride", formula: "CaF2", smiles: "[F-].[F-].[Ca+2]", weight: 78.07, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["calcium fluoride", "fluorite", "caf2", "caff"] },
+  { cid: 14792, name: "Magnesium Oxide", formula: "MgO", smiles: "[Mg]=O", weight: 40.30, tpsa: 17.1, xlogp: null, hbd: 0, hba: 1, rotatable: 0, complexity: 2, aliases: ["magnesium oxide", "mgo", "magnesia"] },
+  { cid: 14778, name: "Calcium Oxide", formula: "CaO", smiles: "[Ca]=O", weight: 56.08, tpsa: 17.1, xlogp: null, hbd: 0, hba: 1, rotatable: 0, complexity: 2, aliases: ["calcium oxide", "quicklime", "cao"] },
+  { cid: 5235, name: "Sodium Fluoride", formula: "FNa", smiles: "[F-].[Na+]", weight: 41.99, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["sodium fluoride", "naf", "fna"] },
 ];
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();

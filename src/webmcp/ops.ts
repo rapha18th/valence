@@ -25,9 +25,26 @@ const ok = (text: string, data?: unknown): Res => ({ ok: true, text, data });
 const err = (text: string): Res => ({ ok: false, text });
 
 const KNOWN_COMBOS: Record<string, number> = {
-  "H,O": 962, "H,H,O": 962, "Cl,Na": 5234, "C,O": 280, "Cl,H": 313,
-  "H,N": 222, "C,H": 297, "H,S": 402, "O,S": 1119, "C,N": 6857,
+  "H,O": 962, "H,H,O": 962, "Cl,Na": 5234, "C,O": 280, "C,O,O": 280,
+  "Cl,H": 313, "H,N": 222, "H,H,H,N": 222, "C,H": 297,
+  "C,H,H,H,H": 297, "H,S": 402, "H,H,S": 402, "O,S": 1119,
+  "F,F": 24524, "Ca,F,F": 24617, "Mg,O": 14792, "K,O": 25522,
+  "Ca,O": 14778, "F,Li": 224478, "F,Na": 5235, "H,H,O,O": 784,
+  "N,N": 947, "O,O": 977,
 };
+
+/** "CaF2" -> { Ca: 1, F: 2 }; returns null if it isn't a plain formula */
+function parseFormulaCounts(s: string): Record<string, number> | null {
+  const tokens = s.match(/([A-Z][a-z]?)(\d*)/g);
+  if (!tokens || tokens.join("") !== s) return null;
+  const out: Record<string, number> = {};
+  for (const tok of tokens) {
+    const m = /([A-Z][a-z]?)(\d*)/.exec(tok)!;
+    if (!BY_SYMBOL[m[1]]) return null;
+    out[m[1]] = (out[m[1]] ?? 0) + (m[2] ? parseInt(m[2], 10) : 1);
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 // ---------- selection ----------
 export function selectElements(symbols: string[], actor: Actor): Res {
@@ -62,10 +79,17 @@ export async function combineSelection(
   const sel = getState().selection;
   if (!sel.length) return err("Nothing selected. Call select_elements first.");
   setStatus("Resolving compound…");
+  setComparison(null);
 
-  const counts = stoich && Object.keys(stoich).length
-    ? stoich
-    : Object.fromEntries(sel.map((s) => [s, 1]));
+  // no explicit ratio: use the criss-cross formula the bond predictor derives
+  // (Ca + F -> CaF2, not CaF), falling back to one-of-each.
+  let counts: Record<string, number>;
+  if (stoich && Object.keys(stoich).length) {
+    counts = stoich;
+  } else {
+    const predicted = predictBond(sel).formula;
+    counts = (predicted && parseFormulaCounts(predicted)) || Object.fromEntries(sel.map((s) => [s, 1]));
+  }
   const key = Object.entries(counts)
     .flatMap(([s, n]) => Array(n).fill(s)).sort().join(",");
 
@@ -101,7 +125,7 @@ export async function combineSelection(
   }
   formula = props.formula || formula;
   setProps(props);
-  setSdf3d(null); setHazard(null); setSimilars([]); setCandidates(null); setViability(null); setBio(null); setUses(null);
+  setSdf3d(null); setHazard(null); setSimilars([]); setCandidates(null); setViability(null); setBio(null); setUses(null); setComparison(null);
   activity({ kind: "note", label: `combined → ${props.name}` });
   note(actor, "Combined selection", `${sel.join(" + ")} → ${props.name} (${formula})`,
     { label: `CID ${cid}`, url: ep.page(cid) });
@@ -123,7 +147,7 @@ export async function searchPubchem(query: string, by: ResolveBy, actor: Actor):
     { label: `CID ${cids[0]}`, url: ep.page(cids[0]) });
   if (props[0]) {
     setProps(props[0]); setSdf3d(null);
-    setHazard(null); setSimilars([]); setCandidates(null); setViability(null); setBio(null); setUses(null);
+    setHazard(null); setSimilars([]); setCandidates(null); setViability(null); setBio(null); setUses(null); setComparison(null);
   }
   const lines = props.map((p) => `${p.cid} ${p.name} (${p.formula})`).join("; ");
   return ok(`Top matches: ${lines || cids.slice(0, 5).join(", ")}.`, props);

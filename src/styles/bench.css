@@ -2,6 +2,8 @@
 @import "./motion.css";
 
 * { box-sizing: border-box; }
+/* [hidden] must always win, even against a component's own display rule */
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   margin: 0;
