@@ -63,7 +63,7 @@ export async function combineSelection(
   if (!props) return err(`Found CID ${cid} but no property record.`);
   formula = props.formula || formula;
   setProps(props);
-  setSdf3d(null); setHazard(null); setSimilars([]); setCandidates(null);
+  setSdf3d(null); setHazard(null); setSimilars([]); setCandidates(null); setViability(null); setBio(null);
   activity({ kind: "note", label: `combined → ${props.name}` });
   note(actor, "Combined selection", `${sel.join(" + ")} → ${props.name} (${formula})`,
     { label: `CID ${cid}`, url: ep.page(cid) });
@@ -79,7 +79,10 @@ export async function searchPubchem(query: string, by: ResolveBy, actor: Actor):
   const props = await getProperties(cids.slice(0, 5));
   note(actor, "Searched PubChem", `${by}:"${query}" → ${cids.length} hit(s)`,
     { label: `CID ${cids[0]}`, url: ep.page(cids[0]) });
-  if (props[0]) { setProps(props[0]); setSdf3d(null); }
+  if (props[0]) {
+    setProps(props[0]); setSdf3d(null);
+    setHazard(null); setSimilars([]); setCandidates(null); setViability(null); setBio(null);
+  }
   const lines = props.map((p) => `${p.cid} ${p.name} (${p.formula})`).join("; ");
   return ok(`Top matches: ${lines || cids.slice(0, 5).join(", ")}.`, props);
 }

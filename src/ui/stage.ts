@@ -33,10 +33,25 @@ export function mountStage(root: HTMLElement) {
   const t2d = el("button", { class: "chip", "aria-pressed": "false", text: "2D" });
   const t3d = el("button", { class: "chip", "aria-pressed": "false", text: "3D" });
   const tSpin = el("button", { class: "chip", "aria-pressed": "false", text: "spin" });
+  const tMax = el("button", { class: "chip chip--max", "aria-pressed": "false", "aria-label": "Maximise stage", title: "Maximise (Esc to exit)", text: "⤢" });
   t2d.addEventListener("click", () => setStage("2d"));
   t3d.addEventListener("click", () => { if (getState().sdf3d) setStage("3d"); });
   tSpin.addEventListener("click", () => toggleSpin(tSpin));
-  controls.append(t2d, t3d, tSpin);
+  tMax.addEventListener("click", () => setMax(stage.dataset.max !== "true"));
+  controls.append(t2d, t3d, tSpin, tMax);
+
+  function setMax(on: boolean) {
+    stage.dataset.max = String(on);
+    tMax.setAttribute("aria-pressed", String(on));
+    tMax.textContent = on ? "⤡" : "⤢";
+    // let layout settle, then resize the GL viewer to the new box
+    requestAnimationFrame(() => setTimeout(() => {
+      if (viewer) { try { viewer.resize(); viewer.render(); } catch { /* ignore */ } }
+    }, 60));
+  }
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && stage.dataset.max === "true") setMax(false);
+  });
 
   const hazard = el("div", { class: "hazard", hidden: true });
   const compare = el("div", { class: "compare", hidden: true });
@@ -90,6 +105,8 @@ export function mountStage(root: HTMLElement) {
     v.zoomTo();
     v.render();
     v.zoom(1.6, 500);
+    // the scene may have been zero-height at create time; force a resize once
+    setTimeout(() => { try { v.resize(); v.zoomTo(); v.zoom(1.6); v.render(); } catch { /* ignore */ } }, 120);
     sfx.confirm();
   }
 
