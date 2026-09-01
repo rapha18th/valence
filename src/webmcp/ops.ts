@@ -5,6 +5,7 @@
 import {
   note, setSelection, setProps, setSdf3d, setHazard, setSimilars, setViability,
   setBio, setUses, setComparison, setCandidates, resetCanvas, setStatus, activity, getState,
+  setBuild, setRecovery,
 } from "../store/store.ts";
 import { ep } from "../pubchem/endpoints.ts";
 import {
@@ -17,12 +18,56 @@ import { fallbackFind } from "../data/fallback.ts";
 import { BY_SYMBOL } from "../data/elements.ts";
 import { GLOSSARY } from "../data/glossary.ts";
 import { predictBond, bondVerdictGlyph } from "../chem/bonding.ts";
-import type { Actor, MoleculeProps, CandidateScore, SimilarHit } from "../store/types.ts";
+import type {
+  Actor, MoleculeProps, CandidateScore, SimilarHit, HazardProfile, BuildJob,
+  BuildConstraints, ScoreTerm, RecoveryAction,
+} from "../store/types.ts";
 import { openRecipeCard } from "../ui/recipe-card.ts";
 
 type Res = { ok: true; text: string; data?: unknown } | { ok: false; text: string };
 const ok = (text: string, data?: unknown): Res => ({ ok: true, text, data });
 const err = (text: string): Res => ({ ok: false, text });
+
+// ---- evidence-based hazard phrasing ----
+// Never emit a bare absolute ("safe", "non-toxic", "toxic"). State what the
+// GHS record supports, and be explicit when it was not checked.
+export function hazardLabel(h: HazardProfile | null | undefined): string {
+  if (!h) return "hazard not assessed";
+  switch (h.basis) {
+    case "primary-classification": {
+      const codes = h.statements.slice(0, 3).map((s) => s.code).join(" ");
+      return `GHS ${h.signal ?? "classified"}${codes ? `: ${codes}` : ""}`;
+    }
+    case "no-ghs-record":
+      return "no GHS classification on file (PubChem checked)";
+    case "reference-safe":
+      return "no GHS classification expected (reference compound)";
+    case "source-unavailable":
+    default:
+      return "GHS not checked — PubChem unavailable";
+  }
+}
+
+// a short "where from / when" tag for a claim
+function provTag(p: { source: string; fetchedAt: number | null; detail?: string } | undefined): string {
+  if (!p) return "";
+  const when = p.fetchedAt ? new Date(p.fetchedAt).toISOString().slice(11, 16) + "Z" : "";
+  const src =
+    p.source === "pubchem-live" ? "PubChem live"
+    : p.source === "pubchem-cache" ? "PubChem cached"
+    : p.source === "bundled" ? "bundled reference"
+    : p.source === "computed" ? "computed locally"
+    : "source unavailable";
+  return when ? `${src} ${when}` : src;
+}
+
+// ---- recovery cards ----
+function recover(title: string, detail: string, actions: RecoveryAction[]) {
+  setRecovery({ id: `r${Date.now()}`, title, detail, actions });
+}
+function clearRecovery() {
+  setRecovery(null);
+}
 
 const KNOWN_COMBOS: Record<string, number> = {
   "H,O": 962, "H,H,O": 962, "Cl,Na": 5234, "C,O": 280, "C,O,O": 280,
@@ -111,11 +156,15 @@ export async function combineSelection(
     if (p.verdict === "alloy") {
       return ok(`${bondVerdictGlyph("alloy")} ${p.why} There is no single molecular compound to place on the stage.`);
     }
-    const hint = pubchemHealthy()
-      ? `PubChem has no entry for the formula ${formula}. Try giving explicit stoichiometry, e.g. { "H": 2, "O": 1 }, or a known name.`
-      : `${pubchemStatusNote()} Could not resolve ${formula} and it is not in the bundled set. Retry in a moment.`;
-    return err(hint);
+    if (!pubchemHealthy()) {
+      recover("PubChem unreachable — compound not resolved",
+        `${formula} is not in the bundled set and the live lookup could not complete.`,
+        [{ label: "Retry combine", tool: "combine_selection", args: { stoichiometry: counts } }]);
+      return err(`${pubchemStatusNote()} Could not resolve ${formula}. Recovery: retry in a moment.`);
+    }
+    return err(`PubChem has no entry for the formula ${formula}. Try explicit stoichiometry, e.g. { "H": 2, "O": 1 }, or a known name.`);
   }
+  clearRecovery();
 
   const props = await getOneProperty(cid);
   if (!props) {
@@ -127,10 +176,10 @@ export async function combineSelection(
   setProps(props);
   setSdf3d(null); setHazard(null); setSimilars([]); setCandidates(null); setViability(null); setBio(null); setUses(null); setComparison(null);
   activity({ kind: "note", label: `combined → ${props.name}` });
-  note(actor, "Combined selection", `${sel.join(" + ")} → ${props.name} (${formula})`,
+  note(actor, "Combined selection", `${sel.join(" + ")} → ${props.name} (${formula}) · ${provTag(props.prov)}`,
     { label: `CID ${cid}`, url: ep.page(cid) });
   setStatus(`${props.name} on the stage.`);
-  return ok(`${props.name} — formula ${formula}, SMILES ${props.smiles}, CID ${cid}.`, props);
+  return ok(`${props.name} — formula ${formula}, SMILES ${props.smiles}, CID ${cid}.\nSource: ${provTag(props.prov)}.`, props);
 }
 
 // ---------- search ----------
@@ -138,10 +187,16 @@ export async function searchPubchem(query: string, by: ResolveBy, actor: Actor):
   setStatus(`Searching PubChem (${by})…`);
   const cids = await resolveCids(query, by);
   if (!cids.length) {
-    return err(pubchemHealthy()
-      ? `PubChem has no ${by} match for "${query}". Try a different spelling, a formula (by: "formula"), or a SMILES.`
-      : `${pubchemStatusNote()} Could not look up "${query}", and it is not in the bundled set. Retry in a moment.`);
+    const down = !pubchemHealthy();
+    if (down) {
+      recover("PubChem unreachable — lookup failed",
+        `"${query}" is not in the bundled set and the live lookup could not complete.`,
+        [{ label: "Retry", tool: "search_pubchem", args: { query, by } }]);
+      return err(`${pubchemStatusNote()} Could not look up "${query}". Recovery: retry in a moment.`);
+    }
+    return err(`PubChem has no ${by} match for "${query}". Try a different spelling, by:"formula", or a SMILES.`);
   }
+  clearRecovery();
   const props = await getProperties(cids.slice(0, 5));
   note(actor, "Searched PubChem", `${by}:"${query}" → ${cids.length} hit(s)`,
     { label: `CID ${cids[0]}`, url: ep.page(cids[0]) });
@@ -158,33 +213,44 @@ export async function fetchProperties(cid: number, actor: Actor): Promise<Res> {
   const p = await getOneProperty(cid);
   if (!p) return err(`No property record for CID ${cid}.`);
   setProps(p);
-  note(actor, "Fetched properties", `${p.name}: MW ${p.weight}, TPSA ${p.tpsa}, logP ${p.xlogp}, HBD/HBA ${p.hbd}/${p.hba}`,
+  note(actor, "Fetched properties", `${p.name}: MW ${p.weight}, TPSA ${p.tpsa}, logP ${p.xlogp}, HBD/HBA ${p.hbd}/${p.hba} · ${provTag(p.prov)}`,
     { label: `CID ${cid}`, url: ep.page(cid) });
-  return ok(`${p.name}: formula ${p.formula}, MW ${p.weight} g/mol, TPSA ${p.tpsa}, XLogP ${p.xlogp}, HBD ${p.hbd}, HBA ${p.hba}, rotatable bonds ${p.rotatable}.`, p);
+  return ok(`${p.name}: formula ${p.formula}, MW ${p.weight} g/mol, TPSA ${p.tpsa}, XLogP ${p.xlogp}, HBD ${p.hbd}, HBA ${p.hba}, rotatable bonds ${p.rotatable}.\nSource: ${provTag(p.prov)}.`, p);
 }
 
 // ---------- 3D ----------
 export async function fetch3dConformer(cid: number, actor: Actor): Promise<Res> {
   setStatus("Fetching 3D conformer…");
   activity({ kind: "target", selector: ".stage", label: "load 3D" });
-  const { sdf, is3d, approx } = await get3dSdf(cid);
+  const { sdf, is3d, approx, prov } = await get3dSdf(cid);
   if (!sdf) {
-    const why = pubchemHealthy()
-      ? `PubChem has no structure record for CID ${cid}.`
-      : `${pubchemStatusNote()} No cached or bundled geometry for CID ${cid}. Try again in a moment.`;
-    return err(why);
+    const down = !pubchemHealthy();
+    recover(
+      down ? "PubChem unreachable — 3D geometry not fetched" : `No structure record for CID ${cid}`,
+      down
+        ? "The conformer call is live PubChem with no offline copy for this compound."
+        : "PubChem has neither a 3D nor a 2D conformer on file for this CID.",
+      [
+        { label: down ? "Retry fetch" : "Retry", tool: "fetch_3d_conformer", args: { cid } },
+        { label: "Keep the 2D view", tool: "get_canvas_state", args: {} },
+      ],
+    );
+    return err(down
+      ? `${pubchemStatusNote()} No cached or bundled geometry for CID ${cid}.`
+      : `PubChem has no 2D or 3D structure record for CID ${cid}.`);
   }
+  clearRecovery();
   setSdf3d(sdf);
   const label = approx ? "Rendered approximate 3D geometry (bundled)"
     : is3d ? "Rendered 3D conformer" : "Rendered 2D structure (no 3D on file)";
-  note(actor, label, `CID ${cid}`,
+  note(actor, label, `CID ${cid} · ${provTag(prov)}`,
     approx ? undefined : { label: "SDF", url: is3d ? ep.sdf3d(cid) : ep.sdf2d(cid) });
   setStatus(approx ? "Approximate geometry on the stage (PubChem 3D unavailable)."
     : is3d ? "3D conformer on the stage." : "2D structure (no 3D conformer available).");
-  return ok(approx
-    ? `PubChem's 3D conformer was unavailable; rendered a textbook geometry for CID ${cid} instead.`
+  return ok((approx
+    ? `PubChem's 3D conformer was unavailable; rendered a hand-built textbook geometry for CID ${cid} instead.`
     : is3d ? `3D ball-and-stick model rendered for CID ${cid}.`
-    : `Only a 2D conformer is on file for CID ${cid}; rendered that.`);
+    : `Only a 2D conformer is on file for CID ${cid}; rendered that.`) + `\nSource: ${provTag(prov)}.`);
 }
 
 // ---------- hazard ----------
@@ -192,16 +258,23 @@ export async function assessHazard(cid: number, actor: Actor): Promise<Res> {
   setStatus("Reading GHS hazard record…");
   activity({ kind: "target", selector: ".hazard, .stage", label: "assess hazard" });
   const h = await getHazard(cid);
-  if (h.severity === "unknown" && !pubchemHealthy()) {
-    return err(`${pubchemStatusNote()} The GHS record is a live PubChem PUG View call. Retry in a moment.`);
+  if (h.basis === "source-unavailable") {
+    recover("PubChem unreachable — GHS record not read",
+      "The hazard classification is a live PubChem PUG View call with no offline copy.",
+      [{ label: "Retry", tool: "assess_hazard_profile", args: { cid } }]);
+    return err(`${pubchemStatusNote()} GHS record not read for CID ${cid}. Recovery: retry in a moment.`);
   }
+  clearRecovery();
   setHazard(h);
-  const summary = h.severity === "unknown"
-    ? "No GHS classification on file."
-    : `${h.signal ?? "Unclassified"} · ${h.severity} · ${h.pictograms.join(" ") || "no pictograms"} · ${h.statements.slice(0, 3).map((s) => s.code).join(" ")}`;
-  note(actor, "Assessed hazard profile", summary, { label: `GHS · CID ${cid}`, url: ep.page(cid) });
-  setStatus(`Hazard: ${h.severity}.`);
-  return ok(summary, h);
+  const label = hazardLabel(h);
+  const detail =
+    h.basis === "primary-classification"
+      ? `${label} · ${h.pictograms.join(" ") || "no pictograms"} · ${h.statements.slice(0, 3).map((s) => s.code).join(" ")}` +
+        (h.notifierNote ? `\n(${h.notifierNote})` : "")
+      : label;
+  note(actor, "Assessed hazard profile", `${label} · ${provTag(h.prov)}`, { label: `GHS · CID ${cid}`, url: ep.page(cid) });
+  setStatus(`Hazard: ${label}.`);
+  return ok(`${detail}\nBasis: ${h.basis.replace(/-/g, " ")}. Source: ${provTag(h.prov)}.`, h);
 }
 
 // ---------- similarity ----------
@@ -213,15 +286,27 @@ export async function findSimilar(
   const self = getState().props?.cid;
   const others = cids.filter((c) => c !== self).slice(0, limit);
   if (!others.length) {
-    return err(pubchemHealthy()
-      ? `No compounds within Tanimoto ${threshold / 100} of ${smiles}. Lower the threshold (try 80) or simplify the SMILES.`
-      : `${pubchemStatusNote()} Similarity search is a live PubChem call and has no offline fallback. Retry in a moment.`);
+    const down = !pubchemHealthy();
+    if (down) {
+      recover("PubChem unreachable — similarity search skipped",
+        "The 2D similarity endpoint is live PubChem with no offline fallback.",
+        [{ label: "Retry", tool: "find_similar_compounds", args: { smiles, threshold, limit } }]);
+      return err(`${pubchemStatusNote()} Similarity search has no offline fallback. Retry in a moment.`);
+    }
+    recover(`No matches at Tanimoto ${(threshold / 100).toFixed(2)}`,
+      `Nothing in PubChem is that close to ${smiles}. A lower threshold widens the net.`,
+      [
+        { label: "Lower to 0.80", tool: "find_similar_compounds", args: { smiles, threshold: 80, limit } },
+        { label: "Lower to 0.70", tool: "find_similar_compounds", args: { smiles, threshold: 70, limit } },
+      ]);
+    return err(`No compounds within Tanimoto ${threshold / 100} of ${smiles}. Recovery: retry with threshold 80 or 70.`);
   }
+  clearRecovery();
   const props = await getProperties(others);
   const hits: SimilarHit[] = props.map((p) => {
     const base: SimilarHit = {
       cid: p.cid, name: p.name, formula: p.formula, smiles: p.smiles,
-      weight: p.weight, tpsa: p.tpsa, xlogp: p.xlogp,
+      weight: p.weight, tpsa: p.tpsa, xlogp: p.xlogp, prov: p.prov,
     };
     const g = greenScore(base);
     base.greenScore = g.score; base.greenNotes = g.notes;
@@ -265,9 +350,18 @@ export async function compareCompounds(aQ: string, bQ: string, actor: Actor): Pr
   setStatus(`Comparing ${aQ} vs ${bQ}…`);
   activity({ kind: "target", selector: ".stage", label: `compare ${aQ} vs ${bQ}` });
   const [pa, pb] = await Promise.all([resolveQuery(aQ), resolveQuery(bQ)]);
-  if (!pa) return err(`Could not resolve "${aQ}".` + (pubchemHealthy() ? "" : " " + pubchemStatusNote()));
-  if (!pb) return err(`Could not resolve "${bQ}".` + (pubchemHealthy() ? "" : " " + pubchemStatusNote()));
+  if (!pa || !pb) {
+    const missing = !pa ? aQ : bQ;
+    const down = !pubchemHealthy();
+    if (down) {
+      recover("PubChem unreachable — comparison incomplete",
+        `"${missing}" is not in the bundled set and the live lookup could not complete.`,
+        [{ label: "Retry comparison", tool: "compare_compounds", args: { a: aQ, b: bQ } }]);
+    }
+    return err(`Could not resolve "${missing}".` + (down ? " " + pubchemStatusNote() + " Recovery: retry in a moment." : ""));
+  }
   if (pa.cid === pb.cid) return err(`"${aQ}" and "${bQ}" are the same compound (CID ${pa.cid}).`);
+  clearRecovery();
 
   const [da, db] = await Promise.all([getDescription(pa.cid), getDescription(pb.cid)]);
   setComparison({
@@ -362,16 +456,31 @@ export function getCanvasState(): Res {
   const snap = {
     selection: s.selection,
     stage: s.props && { cid: s.props.cid, name: s.props.name, formula: s.props.formula, smiles: s.props.smiles, mode: s.stageMode },
-    properties: s.props,
-    hazard: s.hazard && { severity: s.hazard.severity, signal: s.hazard.signal, pictograms: s.hazard.pictograms },
+    properties: s.props && { ...s.props, provenance: s.props.prov ? provTag(s.props.prov) : "unknown" },
+    hazard: s.hazard && {
+      severity: s.hazard.severity,
+      basis: s.hazard.basis,
+      label: hazardLabel(s.hazard),
+      signal: s.hazard.signal,
+      pictograms: s.hazard.pictograms,
+      provenance: provTag(s.hazard.prov),
+    },
     similars: s.similars.map((h) => ({ cid: h.cid, name: h.name, greenScore: h.greenScore })),
     uses: s.uses,
-    viability: s.viability,
+    viability: s.viability && { ...s.viability, provenance: provTag(s.viability.prov) },
     comparison: s.comparison && {
       a: { cid: s.comparison.a.props.cid, name: s.comparison.a.props.name, formula: s.comparison.a.props.formula },
       b: { cid: s.comparison.b.props.cid, name: s.comparison.b.props.name, formula: s.comparison.b.props.formula },
     },
     candidates: s.candidates,
+    build: s.build && {
+      id: s.build.id, status: s.build.status, phase: s.build.phase,
+      progress: s.build.progress, partial: s.build.partial, winnerCid: s.build.winnerCid,
+    },
+    recovery: s.recovery && { title: s.recovery.title, actions: s.recovery.actions },
+    trace: s.trace.slice(0, 8).map((t) => ({
+      name: t.name, actor: t.actor, ok: t.ok, durationMs: t.durationMs, retries: t.retries,
+    })),
     notebook: s.notebook.slice(0, 12).map((e) => ({ actor: e.actor, action: e.action, detail: e.detail, cite: e.citation?.url })),
   };
   return ok(JSON.stringify(snap, null, 2), snap);
@@ -430,121 +539,259 @@ export function explain(topic: string, actor: Actor): Res {
   return ok(`${hit.term} — ${hit.short}${hit.more ? "\n\n" + hit.more : ""}`);
 }
 
-// ---------- build to constraints (the headline) ----------
-interface Constraints {
-  elements?: string[];      // whitelist of allowed element symbols
-  period?: number;          // e.g. 2 => only period-2 elements
-  nonToxic?: boolean;
-  maxWeight?: number;
-  maxLogP?: number;
-}
+// ---------- build to constraints (the headline, async job) ----------
 
-export async function buildToConstraints(goal: string, raw: Constraints, actor: Actor): Promise<Res> {
-  setStatus(`Agent: building — ${goal}`);
-  const cons: Constraints = { ...raw };
+interface JobCtl {
+  job: BuildJob;
+  cancelled: boolean;
+}
+const buildJobs = new Map<string, JobCtl>();
+let lastBuildId: string | null = null;
+let buildSeq = 0;
+
+const publishJob = (ctl: JobCtl) => setBuild(ctl.job);
+
+/**
+ * Start a constraint solve. Returns a job id immediately; the work runs
+ * detached. Poll get_build_status, stop with cancel_build. The canvas is only
+ * written once, at the end, so a time budget or a cancel never leaves a
+ * half-built winner on the stage.
+ */
+export function startBuild(goal: string, raw: BuildConstraints, actor: Actor): Res {
+  const cons: BuildConstraints = { ...raw };
   if (cons.period && !cons.elements) {
     cons.elements = Object.values(BY_SYMBOL)
       .filter((e) => e.period === cons.period && e.category !== "lanthanide" && e.category !== "actinide")
       .map((e) => e.symbol);
   }
+
+  const id = `bld_${Date.now().toString(36)}${(buildSeq++).toString(36)}`;
+  const job: BuildJob = {
+    id, goal, constraints: cons,
+    status: "running", phase: "resolving candidates",
+    progress: { done: 0, total: 0 },
+    startedAt: Date.now(), endedAt: null,
+    candidates: [], winnerCid: null, partial: false, error: null,
+  };
+  const ctl: JobCtl = { job, cancelled: false };
+  buildJobs.set(id, ctl);
+  lastBuildId = id;
+  clearRecovery();
+
+  // light the allowed elements on the table right away (input, not output)
   const allowed = new Set(cons.elements ?? []);
-  // hydrogen is always implied in an organic backbone; "period-2 elements" is
-  // shorthand for the second row plus the H that hangs off it.
-  if (allowed.size) allowed.add("H");
   if (allowed.size) {
+    allowed.add("H");
     for (const s of allowed) if (s !== "H") activity({ kind: "target", selector: `[data-sym="${s}"]`, label: `consider ${s}` });
     setSelection([...allowed].filter((s) => s !== "H").slice(0, 8));
   }
+  publishJob(ctl);
+  setStatus(`Agent: build ${id} started — ${goal}`);
+  note(actor, "Build started", `${id} · ${goal}`);
 
-  // candidate pool: goal-driven seeds, scored against the constraints
-  const seeds = candidateSeeds(goal);
+  void runBuild(ctl, actor).catch((e) => {
+    ctl.job.status = "error";
+    ctl.job.error = (e as Error)?.message ?? String(e);
+    ctl.job.endedAt = Date.now();
+    publishJob(ctl);
+    setStatus(`Agent: build ${id} failed.`);
+  });
+
+  return ok(
+    `Build job ${id} started for "${goal}". It runs asynchronously.\n` +
+    `Poll with get_build_status { "jobId": "${id}" } for phase, progress, and the ranked result.\n` +
+    `Stop it early with cancel_build { "jobId": "${id}" }.`,
+    { jobId: id, status: "running" },
+  );
+}
+
+export function getBuildStatus(jobId: string | undefined): Res {
+  const id = jobId || lastBuildId;
+  if (!id) return err("No build has been started yet.");
+  const ctl = buildJobs.get(id);
+  if (!ctl) return err(`No build job ${id}.`);
+  const j = ctl.job;
+  const snap = {
+    jobId: j.id,
+    status: j.status,
+    phase: j.phase,
+    progress: j.progress,
+    elapsedMs: (j.endedAt ?? Date.now()) - j.startedAt,
+    partial: j.partial,
+    winnerCid: j.winnerCid,
+    error: j.error,
+    candidates: j.candidates.slice(0, 5).map((c) => ({
+      cid: c.cid, name: c.name, formula: c.formula, score: c.score,
+      pass: c.pass, rejected: c.rejected, hazard: c.hazardLabel,
+      breakdown: c.breakdown,
+    })),
+  };
+  const line =
+    j.status === "running"
+      ? `Build ${j.id}: ${j.phase} (${j.progress.done}/${j.progress.total || "?"}).`
+      : j.status === "done"
+        ? `Build ${j.id} done${j.partial ? " (partial — time budget)" : ""}. ` +
+          snap.candidates.map((c) => `${c.pass ? "✓" : "✗"} ${c.name} ${c.score}/100`).join("; ")
+        : `Build ${j.id} ${j.status}${j.error ? `: ${j.error}` : ""}.`;
+  return ok(line + "\n" + JSON.stringify(snap, null, 2), snap);
+}
+
+export function cancelBuild(jobId: string | undefined): Res {
+  const id = jobId || lastBuildId;
+  if (!id) return err("No build to cancel.");
+  const ctl = buildJobs.get(id);
+  if (!ctl) return err(`No build job ${id}.`);
+  if (ctl.job.status !== "running") return ok(`Build ${id} is already ${ctl.job.status}.`);
+  ctl.cancelled = true;
+  ctl.job.phase = "stopping";
+  publishJob(ctl);
+  return ok(`Build ${id} stop requested. It halts at the next checkpoint and commits whatever it has fully ranked.`);
+}
+
+async function runBuild(ctl: JobCtl, actor: Actor) {
+  const { job } = ctl;
+  const cons = job.constraints;
+  const allowed = new Set(cons.elements ?? []);
+  if (allowed.size) allowed.add("H");
+
+  const seeds = candidateSeeds(job.goal);
+  job.progress = { done: 0, total: seeds.length };
+  job.phase = "resolving candidates";
+  publishJob(ctl);
   activity({ kind: "note", label: `searching ${seeds.length} candidates` });
 
-  // resolve names -> CIDs. Check the bundled set first so a PubChem outage
-  // never turns this into an 8-way retry storm.
-  const budget = Date.now() + 10000;
+  // resolve names -> CIDs, bundled set first, deduped by CID
+  const resolveDeadline = Date.now() + 10000;
   const pairs: { seed: string; cid: number }[] = [];
+  const seenCid = new Set<number>();
   for (const seed of seeds) {
+    if (ctl.cancelled) return commit(ctl, actor, "cancelled", new Map(), new Map());
     const fb = fallbackFind(seed);
-    if (fb) { pairs.push({ seed, cid: fb.cid }); continue; }
-    if (Date.now() > budget) break;
-    const cids = await resolveCids(seed, "name");
-    if (cids.length) pairs.push({ seed, cid: cids[0] });
+    let cid: number | undefined = fb?.cid;
+    if (cid === undefined && Date.now() < resolveDeadline) {
+      const cids = await resolveCids(seed, "name");
+      cid = cids[0];
+    }
+    job.progress.done++;
+    if (cid !== undefined && !seenCid.has(cid)) { seenCid.add(cid); pairs.push({ seed, cid }); }
+    publishJob(ctl);
   }
+  if (!pairs.length) {
+    job.error = pubchemHealthy()
+      ? "No candidates resolved for that goal."
+      : `${pubchemStatusNote()} No seeds resolved and few are in the bundled set.`;
+    job.status = "error";
+    job.endedAt = Date.now();
+    publishJob(ctl);
+    note(actor, "Build failed", job.error);
+    setStatus(`Agent: build ${job.id} — ${job.error}`);
+    return;
+  }
+
+  // properties, then dedupe by connectivity identity (drop stereo/charge)
+  job.phase = "fetching properties";
+  publishJob(ctl);
   const props = await getProperties(pairs.map((p) => p.cid));
-  const byCid = new Map(props.map((p) => [p.cid, p]));
-
-  const scored: CandidateScore[] = [];
-  for (const { cid } of pairs) {
-    const p = byCid.get(cid);
-    if (!p) continue;
-    const s = scoreCandidate(p, cons);
-    if (allowed.size && !elementsWithin(p.formula, allowed)) {
-      s.pass = false;
-      s.reasons.unshift(`uses elements outside the ${cons.period ? `period-${cons.period}` : "allowed"} set`);
-      s.score = Math.min(s.score, 30);
-    }
-    scored.push(s);
+  const byCid = new Map<number, MoleculeProps>();
+  const seenKey = new Set<string>();
+  for (const p of props) {
+    const key = canonicalKey(p);
+    if (seenKey.has(key)) continue;
+    seenKey.add(key);
+    byCid.set(p.cid, p);
   }
-  if (!scored.length) return err("No candidates resolved for that goal.");
+  const pool = pairs.filter((p) => byCid.has(p.cid));
 
-  // check the GHS record for every candidate, so a "non-toxic" goal actually
-  // rewards the safer molecule rather than whatever sorted first. Bounded by a
-  // ~14s budget so the tool always returns a ranking instead of hanging.
-  const deadline = Date.now() + 14000;
-  const wantSafe = cons.nonToxic || /non[\s-]?toxic|green|safe/.test(goal.toLowerCase());
+  // hazard sweep, bounded by a ~14s budget
+  job.phase = "hazard-checking every candidate";
+  job.progress = { done: 0, total: pool.length };
+  publishJob(ctl);
   activity({ kind: "note", label: "checking hazard on every candidate" });
-  const hazards = new Map<number, Awaited<ReturnType<typeof getHazard>>>();
-  let hazardChecked = 0;
-  for (const c of scored) {
-    if (Date.now() > deadline) break;
-    const h = await getHazard(c.cid);
-    hazardChecked++;
-    hazards.set(c.cid, h);
-    const penalty =
-      h.severity === "severe" ? 45 : h.severity === "high" ? 30 :
-      h.severity === "moderate" ? 15 : h.severity === "low" ? 6 : 0;
-    if (penalty && wantSafe) {
-      c.score = Math.max(5, c.score - penalty);
-      c.reasons.push(`GHS ${h.signal ?? h.severity} (−${penalty})`);
-      if (h.severity === "severe") c.pass = false;
-    } else if (h.severity !== "unknown" && h.severity !== "none") {
-      c.reasons.push(`GHS ${h.signal ?? h.severity}`);
-    } else if (h.severity === "none" || (h.severity === "unknown" && wantSafe)) {
-      c.score += 4;
-      c.reasons.push(h.severity === "none" ? "low GHS concern" : "no GHS red flags");
-    }
+  const hazards = new Map<number, HazardProfile>();
+  const hazDeadline = Date.now() + 14000;
+  for (const { cid } of pool) {
+    if (ctl.cancelled) break;
+    if (Date.now() > hazDeadline) { job.partial = true; break; }
+    hazards.set(cid, await getHazard(cid));
+    job.progress.done = hazards.size;
+    publishJob(ctl);
   }
 
+  // one scoring pass, with props and hazard both known -> bounded, transparent
+  job.phase = "scoring";
+  publishJob(ctl);
+  const wantSafe = !!cons.nonToxic || /non[\s-]?toxic|green|safe/.test(job.goal.toLowerCase());
+  const scored: CandidateScore[] = [];
+  for (const { cid } of pool) {
+    const p = byCid.get(cid);
+    if (p) scored.push(scoreCandidate(p, cons, allowed, hazards.get(cid), wantSafe));
+  }
   scored.sort((a, b) => b.score - a.score);
-  const top = scored.slice(0, 3);
-  setCandidates(top);
-  setSimilars([]);
+  job.candidates = scored;
+  const winner = scored.find((c) => c.pass) ?? scored[0];
+  job.winnerCid = winner?.cid ?? null;
 
-  // put the winner on the stage
-  const winner = top.find((c) => c.pass) ?? top[0];
-  const wp = byCid.get(winner.cid) ?? await getOneProperty(winner.cid);
-  if (wp) {
-    setProps(wp);
-    activity({ kind: "target", selector: ".stage", label: `stage ${wp.name}` });
-    const { sdf } = await get3dSdf(wp.cid);
-    if (sdf) setSdf3d(sdf);
-    setHazard(hazards.get(wp.cid) ?? await getHazard(wp.cid));
+  return commit(ctl, actor, ctl.cancelled ? "cancelled" : "done", byCid, hazards);
+}
+
+/** The single atomic write to the canvas. Nothing above this touches derived state. */
+async function commit(
+  ctl: JobCtl,
+  actor: Actor,
+  status: "done" | "cancelled",
+  byCid: Map<number, MoleculeProps>,
+  hazards: Map<number, HazardProfile>,
+) {
+  const { job } = ctl;
+  job.status = status;
+  job.endedAt = Date.now();
+
+  const top = job.candidates.slice(0, 5);
+  if (top.length) {
+    setCandidates(top);
+    setSimilars([]);
+    const winner = top.find((c) => c.pass) ?? top[0];
+    if (winner) {
+      const wp = byCid.get(winner.cid) ?? await getOneProperty(winner.cid);
+      if (wp) {
+        setProps(wp);
+        activity({ kind: "target", selector: ".stage", label: `stage ${wp.name}` });
+        const { sdf } = await get3dSdf(wp.cid);
+        if (sdf) setSdf3d(sdf);
+        setHazard(hazards.get(wp.cid) ?? await getHazard(wp.cid));
+      }
+    }
+    for (const c of top) {
+      note(actor, `Candidate: ${c.name}`,
+        `${c.score}/100 ${c.pass ? "✓" : `✗ rejected — ${c.rejected ?? "constraint miss"}`}` +
+        ` · ${c.reasons.slice(0, 3).join("; ")}`,
+        { label: `CID ${c.cid}`, url: ep.page(c.cid) });
+    }
+  } else if (status === "cancelled") {
+    setStatus(`Agent: build ${job.id} stopped before anything was ranked. Canvas unchanged.`);
+    note(actor, "Build stopped", `${job.id} — nothing committed`);
+    publishJob(ctl);
+    return;
   }
 
-  for (const c of top) {
-    note(actor, `Candidate: ${c.name}`, `score ${c.score}/100 — ${c.reasons.join("; ")}`,
-      { label: `CID ${c.cid}`, url: ep.page(c.cid) });
-  }
-  const partial = hazardChecked < scored.length;
-  activity({ kind: "done", label: `Agent: ${winner.name} scored ${winner.score}/100.` });
-  setStatus(`Best fit: ${winner.name} (${winner.score}/100).` + (partial ? " (partial: time budget hit)" : ""));
-  return ok(
-    `Ranked candidates for "${goal}"` +
-    (partial ? ` (hazard-checked ${hazardChecked}/${scored.length} before the time budget):` : ":") + "\n" +
-    top.map((c) => `  ${c.pass ? "✓" : "✗"} ${c.name} (${c.formula}) — ${c.score}/100: ${c.reasons.join("; ")}`).join("\n"),
-    top,
+  publishJob(ctl);
+  const w = top.find((c) => c.pass) ?? top[0];
+  const partial = job.partial || status === "cancelled";
+  activity({ kind: "done", label: w ? `Agent: ${w.name} scored ${w.score}/100.` : "Agent: build ended." });
+  setStatus(
+    status === "cancelled"
+      ? `Agent: build ${job.id} stopped. Ranked ${top.length} fully processed candidate(s).`
+      : `Best fit: ${w?.name ?? "none"} (${w?.score ?? 0}/100).${partial ? " (partial: time budget)" : ""}`,
   );
+}
+
+/** connectivity-level identity so two forms of the same molecule score once */
+function canonicalKey(p: MoleculeProps): string {
+  const s = (p.smiles || p.formula || String(p.cid))
+    .replace(/[@/\\]/g, "")
+    .replace(/\[([A-Za-z]+)[+-]?\d*\]/g, "$1")
+    .toLowerCase();
+  return s || `cid${p.cid}`;
 }
 
 function candidateSeeds(goal: string): string[] {
@@ -566,37 +813,90 @@ function elementsWithin(formula: string, allowed: Set<string>): boolean {
   return syms.every((s) => allowed.has(s));
 }
 
-function scoreCandidate(p: MoleculeProps, c: Constraints): CandidateScore {
-  let score = 70;
+/**
+ * Transparent, bounded scoring. Starts at a fixed base, adds signed terms that
+ * each name their reason, then clamps once to 0..100. No term is ever applied
+ * after the clamp, so a score can never read "104/100".
+ */
+function scoreCandidate(
+  p: MoleculeProps,
+  c: BuildConstraints,
+  allowed: Set<string>,
+  hazard: HazardProfile | undefined,
+  wantSafe: boolean,
+): CandidateScore {
+  const BASE = 50;
+  const terms: ScoreTerm[] = [];
   const reasons: string[] = [];
   let pass = true;
+  let rejected: string | undefined;
+  const add = (label: string, delta: number) => { if (delta) terms.push({ label, delta }); };
 
+  // hard constraint: element whitelist
+  if (allowed.size && !elementsWithin(p.formula, allowed)) {
+    pass = false;
+    rejected = `uses elements outside the ${c.period ? `period-${c.period}` : "allowed"} set`;
+    add("outside allowed elements", -30);
+  }
+  // weight cap
   if (c.maxWeight && p.weight !== null) {
-    if (p.weight <= c.maxWeight) { score += 8; reasons.push(`MW ${Math.round(p.weight)} within limit`); }
-    else { score -= 20; pass = false; reasons.push(`MW ${Math.round(p.weight)} over ${c.maxWeight}`); }
+    if (p.weight <= c.maxWeight) { add(`MW within ${c.maxWeight}`, +8); reasons.push(`MW ${Math.round(p.weight)} within limit`); }
+    else {
+      add(`MW over ${c.maxWeight}`, -18);
+      if (pass) { pass = false; rejected = `MW ${Math.round(p.weight)} over the ${c.maxWeight} g/mol cap`; }
+    }
   }
-  if (c.maxLogP && p.xlogp !== null) {
-    if (p.xlogp <= c.maxLogP) { score += 6; reasons.push(`logP ${p.xlogp} ok`); }
-    else { score -= 12; reasons.push(`logP ${p.xlogp} high`); }
+  // logP cap
+  if (c.maxLogP != null && p.xlogp !== null) {
+    if (p.xlogp <= c.maxLogP) add(`logP within ${c.maxLogP}`, +6);
+    else { add(`logP over ${c.maxLogP}`, -12); reasons.push(`logP ${p.xlogp} above the cap`); }
   }
-  // two or more hydrogen-bonding handles make a workable precursor
+  // reactive handles
   if (p.hbd !== null && p.hba !== null) {
-    if (p.hbd >= 1 && p.hba >= 2) { score += 8; reasons.push(`${p.hbd} donor / ${p.hba} acceptor handles`); }
-    else if (p.hbd + p.hba >= 2) { score += 4; reasons.push("some reactive handles"); }
-    else { score -= 6; reasons.push("few reactive handles"); }
+    if (p.hbd >= 1 && p.hba >= 2) { add("2+ H-bond handles", +10); reasons.push(`${p.hbd} donor / ${p.hba} acceptor handles`); }
+    else if (p.hbd + p.hba >= 2) add("some reactive handles", +4);
+    else { add("few reactive handles", -6); reasons.push("few reactive handles"); }
   }
-  if (/O/.test(p.formula) && /N/.test(p.formula)) { score += 3; reasons.push("O and N functionality"); }
-  else if (/O/.test(p.formula)) { score += 4; reasons.push("oxygen functionality"); }
-  // low logP tracks with water processability, a plus for a green precursor
+  // functionality
+  if (/O/.test(p.formula) && /N/.test(p.formula)) add("O and N functionality", +4);
+  else if (/O/.test(p.formula)) add("oxygen functionality", +5);
+  // processability
   if (p.xlogp !== null) {
-    if (p.xlogp < 0) score += 5;
-    else if (p.xlogp > 1.5) { score -= 6; reasons.push(`logP ${p.xlogp} (oily)`); }
+    if (p.xlogp < 0) add("water-processable (logP < 0)", +6);
+    else if (p.xlogp > 1.5) { add("oily (logP > 1.5)", -6); reasons.push(`logP ${p.xlogp} (oily)`); }
   }
-  if (p.rotatable !== null && p.rotatable <= 3) { score += 3; reasons.push("compact backbone"); }
-  if (p.complexity !== null && p.complexity < 120) score += 2;
+  if (p.rotatable !== null && p.rotatable <= 3) add("compact backbone", +3);
+  if (p.complexity !== null && p.complexity < 120) add("low complexity", +2);
 
+  // hazard, evidence-based
+  const hlabel = hazardLabel(hazard);
+  if (hazard) {
+    const sev = hazard.severity;
+    if (wantSafe) {
+      const penalty = sev === "severe" ? -35 : sev === "high" ? -22 : sev === "moderate" ? -12 : sev === "low" ? -5 : 0;
+      if (penalty) { add(`hazard: ${hlabel}`, penalty); reasons.push(hlabel); }
+      if (sev === "severe" && pass) {
+        pass = false;
+        const codes = hazard.statements.slice(0, 3).map((s) => s.code).join(" ");
+        rejected = `GHS ${hazard.signal ?? "severe"}${codes ? `: ${codes}` : ""} with a non-toxic goal`;
+      }
+      if (sev === "none") { add("no GHS hazards in primary classification", +6); reasons.push("no GHS hazards in primary classification"); }
+      else if (sev === "unknown" && hazard.basis === "no-ghs-record") add("no GHS record (unverified)", +2);
+      else if (hazard.basis === "source-unavailable") { add("hazard not checked", -3); reasons.push("hazard not checked — PubChem unavailable"); }
+    } else if (sev !== "unknown" && sev !== "none") {
+      reasons.push(hlabel);
+    }
+  }
+
+  const score = Math.max(0, Math.min(100, Math.round(BASE + terms.reduce((s, t) => s + t.delta, 0))));
   reasons.push(`TPSA ${p.tpsa ?? "?"}, logP ${p.xlogp ?? "?"}`);
-  return { cid: p.cid, name: p.name, formula: p.formula, smiles: p.smiles, score: Math.max(0, Math.min(100, score)), reasons, pass };
+  return {
+    cid: p.cid, name: p.name, formula: p.formula, smiles: p.smiles,
+    score, base: BASE, breakdown: terms, reasons, pass, rejected,
+    hazardLabel: hlabel,
+    weight: p.weight, tpsa: p.tpsa, xlogp: p.xlogp, hbd: p.hbd, hba: p.hba,
+    prov: p.prov,
+  };
 }
 
 // ---------- greener alternatives ----------
@@ -615,12 +915,17 @@ export async function proposeGreener(cidOrSmiles: string, actor: Actor): Promise
     baseCid = cids[0];
   }
   const cids = await similaritySearch(smiles, 80, 15);
-  const others = cids.filter((c) => c !== baseCid).slice(0, 6);
+  const others = [...new Set(cids.filter((c) => c !== baseCid))].slice(0, 6);
   const props = await getProperties(others);
+  const seen = new Set<string>();
   const hits: SimilarHit[] = props.map((p) => {
-    const h: SimilarHit = { cid: p.cid, name: p.name, formula: p.formula, smiles: p.smiles, weight: p.weight, tpsa: p.tpsa, xlogp: p.xlogp };
+    const h: SimilarHit = { cid: p.cid, name: p.name, formula: p.formula, smiles: p.smiles, weight: p.weight, tpsa: p.tpsa, xlogp: p.xlogp, prov: p.prov };
     const g = greenScore(h); h.greenScore = g.score; h.greenNotes = g.notes;
     return h;
+  }).filter((h) => {
+    const k = (h.smiles || h.formula || String(h.cid)).toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
   }).sort((a, b) => (b.greenScore ?? 0) - (a.greenScore ?? 0)).slice(0, 3);
   setSimilars(hits); setCandidates(null);
   for (const h of hits) {

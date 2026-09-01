@@ -1,9 +1,40 @@
 import { el, clear, fmt } from "../lib/dom.ts";
-import { getState, subscribe, setStage, setComparison } from "../store/store.ts";
+import { getState, subscribe, setStage, setComparison, setRecovery } from "../store/store.ts";
 import { sfx } from "../lib/sound.ts";
 import { drawStructureSvg } from "../lib/structure2d.ts";
 import * as ops from "../webmcp/ops.ts";
-import type { MoleculeProps, CompareSide } from "../store/types.ts";
+import { invokeTool } from "../webmcp/invoke.ts";
+import type { MoleculeProps, CompareSide, HazardProfile } from "../store/types.ts";
+
+// evidence-based, never a bare "safe" / "toxic"
+function hazardWording(h: HazardProfile): { head: string; sub: string } {
+  switch (h.basis) {
+    case "primary-classification":
+      return {
+        head: h.signal ?? "GHS classified",
+        sub: h.statements.slice(0, 3).map((s) => `${s.code} ${s.text}`).join("  ·  ") || "see PubChem for statements",
+      };
+    case "no-ghs-record":
+      return { head: "No GHS record", sub: "PubChem was checked; nothing is classified for this compound" };
+    case "reference-safe":
+      return { head: "No GHS record", sub: "reference compound; no classification expected" };
+    case "source-unavailable":
+    default:
+      return { head: "Not checked", sub: "PubChem unavailable — hazard was not read" };
+  }
+}
+
+function provChipText(p: MoleculeProps["prov"]): string {
+  if (!p) return "provenance unknown";
+  const when = p.fetchedAt ? new Date(p.fetchedAt).toISOString().slice(11, 16) + "Z" : "";
+  const src =
+    p.source === "pubchem-live" ? "PubChem · live"
+    : p.source === "pubchem-cache" ? "PubChem · cached"
+    : p.source === "bundled" ? "bundled reference"
+    : p.source === "computed" ? "computed locally"
+    : "source unavailable";
+  return when ? `${src} · ${when}` : src;
+}
 
 export function mountStage(root: HTMLElement) {
   const stage = el("div", { class: "stage", "data-mode": "empty" });
@@ -62,7 +93,8 @@ export function mountStage(root: HTMLElement) {
 
   const uses = el("div", { class: "stage__uses", hidden: true });
   const cmp = el("div", { class: "stage__cmp", hidden: true });
-  stage.append(scene, cmp, title, uses, controls, hazard, compare, props);
+  const recovery = el("div", { class: "recovery", hidden: true });
+  stage.append(scene, cmp, title, uses, controls, hazard, compare, recovery, props);
   root.append(stage);
 
   let viewer: any = null;
@@ -159,6 +191,10 @@ export function mountStage(root: HTMLElement) {
         el("div", { class: "props__v", html: `${v}${u ? ` <small>${u}</small>` : ""}` }),
       ]));
     }
+    props.append(el("div", { class: "props__cell props__cell--prov" }, [
+      el("div", { class: "props__k", text: "source" }),
+      el("div", { class: "props__prov", text: provChipText(p.prov) }),
+    ]));
   }
 
   function renderHazard() {
@@ -168,17 +204,43 @@ export function mountStage(root: HTMLElement) {
     hazard.hidden = false;
     hazard.dataset.sev = h.severity;
     clear(hazard);
+    const w = hazardWording(h);
     hazard.append(
       el("div", { class: "hazard__row" }, [
-        el("span", { class: "hazard__sig", text: h.signal ?? (h.severity === "none" ? "Low concern" : "Unclassified") }),
+        el("span", { class: "hazard__sig", text: w.head }),
       ]),
       el("div", { class: "hazard__pics" },
         h.pictograms.length
           ? h.pictograms.map((p) => el("span", { class: "hazard__pic", title: p, text: p.replace("GHS", "") }))
-          : [el("span", { class: "hazard__stmts", text: h.severity === "unknown" ? "no GHS record" : "no pictograms" })],
+          : [el("span", { class: "hazard__stmts", text: h.basis === "primary-classification" ? "no pictograms" : "no pictograms on file" })],
       ),
-      el("div", { class: "hazard__stmts", text: h.statements.slice(0, 3).map((s) => `${s.code} ${s.text}`).join("  ·  ") }),
+      el("div", { class: "hazard__stmts", text: w.sub }),
+      el("div", { class: "hazard__prov", text: provChipText(h.prov) }),
     );
+  }
+
+  function renderRecovery() {
+    const r = getState().recovery;
+    if (!r) { recovery.hidden = true; return; }
+    recovery.hidden = false;
+    clear(recovery);
+    recovery.append(
+      el("div", { class: "recovery__title", text: r.title }),
+      el("div", { class: "recovery__detail", text: r.detail }),
+    );
+    const acts = el("div", { class: "recovery__acts" });
+    for (const a of r.actions) {
+      const btn = el("button", { class: "recovery__btn", text: a.label });
+      btn.addEventListener("click", () => {
+        setRecovery(null);
+        void invokeTool(a.tool, a.args);
+      });
+      acts.append(btn);
+    }
+    const dismiss = el("button", { class: "recovery__x", "aria-label": "Dismiss", text: "dismiss" });
+    dismiss.addEventListener("click", () => setRecovery(null));
+    acts.append(dismiss);
+    recovery.append(acts);
   }
 
   function renderCompare() {
@@ -331,6 +393,7 @@ export function mountStage(root: HTMLElement) {
     controls.hidden = comparing;
     props.hidden = comparing;
     hazard.hidden = hazard.hidden || comparing;
+    if (comparing) recovery.hidden = true; else renderRecovery();
     stage.dataset.mode = s.stageMode;
     empty.hidden = comparing || s.stageMode !== "empty";
     t2d.setAttribute("aria-pressed", String(s.stageMode === "2d"));
