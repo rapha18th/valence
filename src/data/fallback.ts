@@ -2,9 +2,19 @@
 // working during a PubChem outage. Live PubChem data always takes precedence;
 // this only fills in when a request returns nothing. The small molecules also
 // carry a hand-built 3D geometry so the stage can still show a model.
-import type { MoleculeProps } from "../store/types.ts";
+import type { MoleculeProps, HazardSeverity, HazardPictogram } from "../store/types.ts";
 
-type F = MoleculeProps & { aliases: string[]; sdf3d?: string };
+// a compact GHS summary carried offline for the build_to_constraints seeds, so
+// the hazard-aware ranking still differentiates when PubChem's GHS endpoint is
+// down. Expanded into a full HazardProfile in pubchem/parse.ts.
+export interface BundledGhs {
+  signal: "Danger" | "Warning" | null;
+  severity: HazardSeverity;
+  hcodes: string[];
+  pictograms?: HazardPictogram[];
+}
+
+type F = MoleculeProps & { aliases: string[]; sdf3d?: string; ghs?: BundledGhs };
 
 // textbook 3D geometries (V2000) for the simplest molecules
 const SDF: Record<number, string> = {
@@ -29,15 +39,15 @@ export const FALLBACK: F[] = [
   { cid: 2519, name: "Caffeine", formula: "C8H10N4O2", smiles: "CN1C=NC2=C1C(=O)N(C(=O)N2C)C", weight: 194.19, tpsa: 58.4, xlogp: -0.1, hbd: 0, hba: 3, rotatable: 0, complexity: 293, aliases: ["caffeine", "c8h10n4o2"] },
   { cid: 2244, name: "Aspirin", formula: "C9H8O4", smiles: "CC(=O)OC1=CC=CC=C1C(=O)O", weight: 180.16, tpsa: 63.6, xlogp: 1.2, hbd: 1, hba: 4, rotatable: 3, complexity: 212, aliases: ["aspirin", "acetylsalicylic acid", "c9h8o4"] },
   { cid: 5793, name: "D-Glucose", formula: "C6H12O6", smiles: "C(C1C(C(C(C(O1)O)O)O)O)O", weight: 180.16, tpsa: 110, xlogp: -2.6, hbd: 5, hba: 6, rotatable: 1, complexity: 151, aliases: ["glucose", "d-glucose", "dextrose", "c6h12o6"] },
-  { cid: 10442, name: "1,3-Propanediol", formula: "C3H8O2", smiles: "C(CO)CO", weight: 76.09, tpsa: 40.5, xlogp: -1, hbd: 2, hba: 2, rotatable: 2, complexity: 18.3, aliases: ["1,3-propanediol", "propane-1,3-diol", "trimethylene glycol", "c3h8o2", "pdo"] },
-  { cid: 174, name: "Ethylene Glycol", formula: "C2H6O2", smiles: "C(CO)O", weight: 62.07, tpsa: 40.5, xlogp: -1.4, hbd: 2, hba: 2, rotatable: 1, complexity: 8.9, aliases: ["ethylene glycol", "ethane-1,2-diol", "c2h6o2", "occo"] },
-  { cid: 757, name: "Lactic Acid", formula: "C3H6O3", smiles: "CC(C(=O)O)O", weight: 90.08, tpsa: 57.5, xlogp: -0.7, hbd: 2, hba: 3, rotatable: 1, complexity: 74.9, aliases: ["lactic acid", "2-hydroxypropanoic acid", "c3h6o3"] },
-  { cid: 612, name: "Glycolic Acid", formula: "C2H4O3", smiles: "C(C(=O)O)O", weight: 76.05, tpsa: 57.5, xlogp: -1.1, hbd: 2, hba: 3, rotatable: 1, complexity: 51.4, aliases: ["glycolic acid", "hydroxyacetic acid", "c2h4o3"] },
-  { cid: 1110, name: "Succinic Acid", formula: "C4H6O4", smiles: "C(CC(=O)O)C(=O)O", weight: 118.09, tpsa: 74.6, xlogp: -0.6, hbd: 2, hba: 4, rotatable: 3, complexity: 92.6, aliases: ["succinic acid", "butanedioic acid", "c4h6o4"] },
-  { cid: 6581, name: "Acrylic Acid", formula: "C3H4O2", smiles: "C=CC(=O)O", weight: 72.06, tpsa: 37.3, xlogp: 0.3, hbd: 1, hba: 2, rotatable: 1, complexity: 71.5, aliases: ["acrylic acid", "prop-2-enoic acid", "c3h4o2"] },
-  { cid: 971, name: "Oxalic Acid", formula: "C2H2O4", smiles: "C(=O)(C(=O)O)O", weight: 90.03, tpsa: 74.6, xlogp: -0.3, hbd: 2, hba: 4, rotatable: 1, complexity: 113, aliases: ["oxalic acid", "ethanedioic acid", "c2h2o4"] },
-  { cid: 712, name: "Formaldehyde", formula: "CH2O", smiles: "C=O", weight: 30.026, tpsa: 17.1, xlogp: 0.4, hbd: 0, hba: 1, rotatable: 0, complexity: 10.3, aliases: ["formaldehyde", "methanal", "ch2o"] },
-  { cid: 6228, name: "Ethylene", formula: "C2H4", smiles: "C=C", weight: 28.05, tpsa: 0, xlogp: 1.1, hbd: 0, hba: 0, rotatable: 0, complexity: 14.2, aliases: ["ethylene", "ethene", "c2h4"] },
+  { cid: 10442, name: "1,3-Propanediol", formula: "C3H8O2", smiles: "C(CO)CO", weight: 76.09, tpsa: 40.5, xlogp: -1, hbd: 2, hba: 2, rotatable: 2, complexity: 18.3, aliases: ["1,3-propanediol", "propane-1,3-diol", "trimethylene glycol", "c3h8o2", "pdo"], ghs: { signal: null, severity: "none", hcodes: [] } },
+  { cid: 174, name: "Ethylene Glycol", formula: "C2H6O2", smiles: "C(CO)O", weight: 62.07, tpsa: 40.5, xlogp: -1.4, hbd: 2, hba: 2, rotatable: 1, complexity: 8.9, aliases: ["ethylene glycol", "ethane-1,2-diol", "c2h6o2", "occo"], ghs: { signal: "Warning", severity: "moderate", hcodes: ["H302", "H373"], pictograms: ["GHS07", "GHS08"] } },
+  { cid: 757, name: "Lactic Acid", formula: "C3H6O3", smiles: "CC(C(=O)O)O", weight: 90.08, tpsa: 57.5, xlogp: -0.7, hbd: 2, hba: 3, rotatable: 1, complexity: 74.9, aliases: ["lactic acid", "2-hydroxypropanoic acid", "c3h6o3"], ghs: { signal: "Danger", severity: "high", hcodes: ["H315", "H318"], pictograms: ["GHS05"] } },
+  { cid: 612, name: "Glycolic Acid", formula: "C2H4O3", smiles: "C(C(=O)O)O", weight: 76.05, tpsa: 57.5, xlogp: -1.1, hbd: 2, hba: 3, rotatable: 1, complexity: 51.4, aliases: ["glycolic acid", "hydroxyacetic acid", "c2h4o3"], ghs: { signal: "Danger", severity: "severe", hcodes: ["H302", "H314", "H318", "H332"], pictograms: ["GHS05", "GHS07"] } },
+  { cid: 1110, name: "Succinic Acid", formula: "C4H6O4", smiles: "C(CC(=O)O)C(=O)O", weight: 118.09, tpsa: 74.6, xlogp: -0.6, hbd: 2, hba: 4, rotatable: 3, complexity: 92.6, aliases: ["succinic acid", "butanedioic acid", "c4h6o4"], ghs: { signal: "Warning", severity: "moderate", hcodes: ["H319"], pictograms: ["GHS07"] } },
+  { cid: 6581, name: "Acrylic Acid", formula: "C3H4O2", smiles: "C=CC(=O)O", weight: 72.06, tpsa: 37.3, xlogp: 0.3, hbd: 1, hba: 2, rotatable: 1, complexity: 71.5, aliases: ["acrylic acid", "prop-2-enoic acid", "c3h4o2"], ghs: { signal: "Danger", severity: "severe", hcodes: ["H226", "H302", "H314", "H332", "H400"], pictograms: ["GHS02", "GHS05", "GHS07", "GHS09"] } },
+  { cid: 971, name: "Oxalic Acid", formula: "C2H2O4", smiles: "C(=O)(C(=O)O)O", weight: 90.03, tpsa: 74.6, xlogp: -0.3, hbd: 2, hba: 4, rotatable: 1, complexity: 113, aliases: ["oxalic acid", "ethanedioic acid", "c2h2o4"], ghs: { signal: "Danger", severity: "high", hcodes: ["H302", "H312", "H318"], pictograms: ["GHS05", "GHS07"] } },
+  { cid: 712, name: "Formaldehyde", formula: "CH2O", smiles: "C=O", weight: 30.026, tpsa: 17.1, xlogp: 0.4, hbd: 0, hba: 1, rotatable: 0, complexity: 10.3, aliases: ["formaldehyde", "methanal", "ch2o"], ghs: { signal: "Danger", severity: "severe", hcodes: ["H301", "H311", "H314", "H317", "H331", "H350"], pictograms: ["GHS05", "GHS06", "GHS08"] } },
+  { cid: 6228, name: "Ethylene", formula: "C2H4", smiles: "C=C", weight: 28.05, tpsa: 0, xlogp: 1.1, hbd: 0, hba: 0, rotatable: 0, complexity: 14.2, aliases: ["ethylene", "ethene", "c2h4"], ghs: { signal: "Danger", severity: "high", hcodes: ["H220", "H336"], pictograms: ["GHS02", "GHS07"] } },
   { cid: 6106, name: "Toluene", formula: "C7H8", smiles: "Cc1ccccc1", weight: 92.14, tpsa: 0, xlogp: 2.7, hbd: 0, hba: 0, rotatable: 0, complexity: 38.9, aliases: ["toluene", "methylbenzene", "c7h8"] },
 
   // common drugs
