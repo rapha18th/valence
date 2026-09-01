@@ -5,26 +5,22 @@ import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/600.css";
 import "./styles/bench.css";
 
+// register the WebMCP tools before anything else touches the DOM, so an agent
+// scanning on document-ready already sees document.modelContext populated
+import { registerTools } from "./webmcp/register.ts";
+const toolNames = registerTools();
+
 import { mountLayout } from "./ui/layout.ts";
 import { mountGhostCursor } from "./ui/ghost-cursor.ts";
 import { mountToasts } from "./ui/toasts.ts";
-import { registerTools } from "./webmcp/register.ts";
 import { setStatus } from "./store/store.ts";
 
 const app = document.getElementById("app")!;
 mountToasts();
 mountLayout(app);
 mountGhostCursor();
+setStatus(`Ready. ${toolNames.length} WebMCP tools on document.modelContext. Press two element keys, or ask.`);
 
-registerTools()
-  .then((names) => {
-    if (names.length) {
-      setStatus(`Ready. ${names.length} WebMCP tools on document.modelContext. Press two element keys, or ask.`);
-    } else {
-      setStatus("Ready. WebMCP runtime not detected; the built-in operator still drives the same tools.");
-    }
-  })
-  .catch((e) => {
-    console.error("WebMCP registration failed", e);
-    setStatus("Ready (WebMCP registration failed; UI still works).");
-  });
+// catch a native document.modelContext that a runtime injects after us
+document.addEventListener("DOMContentLoaded", () => registerTools());
+setTimeout(() => registerTools(), 800);

@@ -38,11 +38,66 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .bench__main {
   display: grid;
-  grid-template-rows: auto minmax(320px, 1fr);
+  grid-template-rows: auto auto minmax(300px, 1fr);
   gap: 1px;
   min-width: 0;
   min-height: 0;
   background: var(--hair);
+}
+
+/* ---------- workbench bar (the human's combine path) ---------- */
+.wbench {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 16px;
+  background: linear-gradient(var(--bench-850), var(--bench-800));
+}
+.wbench__sel { display: flex; align-items: center; gap: 5px; }
+.wbench__chip {
+  font-family: var(--font-mono); font-weight: 600; font-size: var(--step-0);
+  padding: 2px 8px; border-radius: 4px;
+  background: color-mix(in srgb, var(--signal) 18%, var(--bench-750));
+  border: 1px solid color-mix(in srgb, var(--signal) 40%, transparent);
+  color: var(--ink-100);
+}
+.wbench__x {
+  font-family: var(--font-mono); font-size: 10px; color: var(--ink-500);
+  background: none; border: 0; padding: 2px 4px; text-decoration: underline;
+}
+.wbench__bond {
+  display: flex; align-items: baseline; gap: 8px; min-width: 0;
+  font-size: var(--step--1); color: var(--ink-300);
+}
+.wbench__glyph { font-family: var(--font-mono); font-weight: 700; font-size: var(--step-1); }
+.wbench__bond[data-verdict="bond"] .wbench__glyph { color: var(--ok); }
+.wbench__bond[data-verdict="no-bond"] .wbench__glyph { color: var(--warn-2); }
+.wbench__bond[data-verdict="alloy"] .wbench__glyph { color: var(--warn-1); }
+.wbench__bond[data-verdict="maybe"] .wbench__glyph { color: var(--ink-500); }
+.wbench__type {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--ink-500); white-space: nowrap;
+}
+.wbench__f {
+  font-family: var(--font-mono); font-weight: 600; color: var(--ink-100);
+  white-space: nowrap;
+}
+.wbench__why {
+  color: var(--ink-300);
+  overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.wbench__go {
+  font-family: var(--font-ui); font-weight: 600; font-size: var(--step-0);
+  padding: 8px 16px; border-radius: var(--radius-ctl);
+  background: var(--signal); border: 1px solid var(--signal); color: #06181d;
+  white-space: nowrap;
+}
+.wbench__go[disabled] { opacity: 0.5; cursor: default; }
+@media (max-width: 720px) {
+  .wbench { grid-template-columns: 1fr auto; }
+  .wbench__bond { grid-column: 1 / -1; -webkit-line-clamp: 3; }
 }
 
 /* ---------- command bar ---------- */
@@ -480,6 +535,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 
 @media (max-width: 860px) {
-  .bench__body { grid-template-columns: 1fr; }
-  .notebook { display: none; }
+  .bench__body { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .notebook {
+    grid-row: 2;
+    max-height: 34vh;
+    border-top: 1px solid var(--hair-strong);
+  }
+  .cmd__input { max-width: none; }
+  .cmd__brand span { display: none; }
+}
+@media (max-width: 520px) {
+  .cmd { flex-wrap: wrap; gap: 10px; }
+  .cmd__input { order: 3; width: 100%; flex-basis: 100%; }
+  .stage__uses { display: none; }
 }

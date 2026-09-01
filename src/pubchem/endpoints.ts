@@ -47,6 +47,10 @@ export const ep = {
     `${REST}/pug_view/data/compound/${cid}/JSON?heading=${enc("Pharmacology and Biochemistry")}`,
   uses: (cid: number) =>
     `${REST}/pug_view/data/compound/${cid}/JSON?heading=${enc("Uses")}`,
+  description: (cid: number) =>
+    `${REST}/pug/compound/cid/${cid}/description/JSON`,
+  synonyms: (cid: number) =>
+    `${REST}/pug/compound/cid/${cid}/synonyms/JSON`,
 
   // Human-facing links for notebook citations.
   page: (cid: number) => `https://pubchem.ncbi.nlm.nih.gov/compound/${cid}`,

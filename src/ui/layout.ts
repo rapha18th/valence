@@ -2,6 +2,7 @@ import { el } from "../lib/dom.ts";
 import { getState, subscribe } from "../store/store.ts";
 import { mountCommandBar } from "./command-bar.ts";
 import { mountPeriodicTable } from "./periodic-table.ts";
+import { mountWorkbenchBar } from "./workbench-bar.ts";
 import { mountStage } from "./stage.ts";
 import { mountNotebook } from "./notebook-rail.ts";
 
@@ -12,6 +13,7 @@ export function mountLayout(app: HTMLElement) {
 
   mountCommandBar(bench);
   mountPeriodicTable(main);
+  mountWorkbenchBar(main);
   mountStage(main);
   body.append(main);
   mountNotebook(body);
