@@ -6,8 +6,14 @@ dist
 *.log
 .DS_Store
 
-# local working notes / decision log — never commit
+# local working notes, decision log, and anything about the competition
+# submission or strategy — the public repo is code + README only
 ADR.md
 .notes/
-
-.vercel
+.scratch/
+/strategy/
+/submission/
+/SUBMISSION*
+/demo-script*
+/devpost*
+/*.docx
