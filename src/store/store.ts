@@ -5,6 +5,7 @@
 import type {
   State, NotebookEntry, Actor, AgentActivity, MoleculeProps, HazardProfile,
   SimilarHit, ViabilityReport, BioReport, CandidateScore, StageMode, BondPrediction,
+  Comparison,
 } from "./types.ts";
 import { predictBond } from "../chem/bonding.ts";
 
@@ -30,6 +31,7 @@ const state: State = {
   viability: null,
   bio: null,
   uses: null,
+  comparison: null,
   candidates: null,
 
   notebook: [],
@@ -170,6 +172,11 @@ export function setUses(u: string[] | null) {
   emit();
 }
 
+export function setComparison(c: Comparison | null) {
+  state.comparison = c;
+  emit();
+}
+
 export function setCandidates(c: CandidateScore[] | null) {
   state.candidates = c;
   emit();
@@ -187,6 +194,7 @@ export function resetCanvas() {
   state.viability = null;
   state.bio = null;
   state.uses = null;
+  state.comparison = null;
   state.candidates = null;
   state.status = "Canvas cleared.";
   emit();

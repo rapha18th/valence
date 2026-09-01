@@ -116,6 +116,18 @@ const TOOLS: ToolDef[] = [
     execute: async (a) => wrap(await ops.substituteAndCompare(String(a.base_smiles), String(a.change), "agent")),
   },
   {
+    name: "compare_compounds",
+    description: "Put two compounds side by side on the stage: A vs B, each identified by name, formula, SMILES, or CID. Renders both structures, a property delta table, and short descriptions.",
+    inputSchema: OBJ({ a: { type: "string" }, b: { type: "string" } }, ["a", "b"]),
+    execute: async (x) => wrap(await ops.compareCompounds(String(x.a), String(x.b), "agent")),
+  },
+  {
+    name: "close_comparison",
+    description: "Leave side-by-side comparison mode and return to the single-compound view.",
+    inputSchema: OBJ({}),
+    execute: async () => wrap(ops.closeComparison("agent")),
+  },
+  {
     name: "build_to_constraints",
     description: "The headline flow. Given a goal (e.g. 'non-toxic polymer precursor') and constraints (allowed elements or a period number, weight/logP caps, non-toxic), search PubChem, hazard-check every candidate, score, rank the top three, and put the winner on the stage.",
     inputSchema: OBJ({

@@ -130,6 +130,15 @@ export interface BondPrediction {
   note?: string;
 }
 
+export interface CompareSide {
+  props: MoleculeProps;
+  description: string | null;
+}
+export interface Comparison {
+  a: CompareSide;
+  b: CompareSide;
+}
+
 export interface State {
   theme: "dark" | "light";
   sound: boolean;
@@ -149,6 +158,7 @@ export interface State {
   viability: ViabilityReport | null;
   bio: BioReport | null;
   uses: string[] | null;
+  comparison: Comparison | null;
   candidates: CandidateScore[] | null;
 
   notebook: NotebookEntry[];
