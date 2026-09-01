@@ -15,18 +15,27 @@ Built for the [OpenAI WebMCP Challenge](https://webmcp.devpost.com/).
 ## Why this is a WebMCP project
 
 The value is **shared control of a live client canvas**. A backend API cannot move the
-pieces on the user's screen. WebMCP can. Valence exposes sixteen typed tools on
-`navigator.modelContext`; the person and the agent call the same tools and mutate the same
-state, so the stage is always a single source of truth.
+pieces on the user's screen. WebMCP can. Valence registers nineteen typed tools on
+`document.modelContext` (the surface ChatGPT's built-in browser, Codex, and Chrome read),
+with a spec-shaped shim for browsers that have no native runtime. The person and the agent
+call the same tools and mutate the same state, so the stage is always a single source of truth.
 
-The built-in operator (a small heuristic planner, no API keys) drives those tools through
-`navigator.modelContext.callTool` — the exact path an external agent uses. A judge in
+The built-in operator (a small heuristic planner, no API keys) invokes those tools through
+`document.modelContext.executeTool` — the exact path an external agent uses. A judge in
 ChatGPT's in-app browser or Chrome with WebMCP enabled drives them the same way.
+
+### For beginners
+
+Valence is built to be explored with no chemistry background. Select two element keys and the
+Workbench bar tells you **whether they bond and why** — ionic, covalent, alloy, or not at all —
+from electronegativity and valence, before any lookup. `predict_bond`, `describe_compound`,
+and `explain` are the teaching tools; the periodic table works with the mouse or the keyboard.
 
 ### Tool surface
 
 | Tool | Input | Effect |
 |---|---|---|
+| `predict_bond` | `symbols[]` | Offline: will these elements bond, and why? Bond type, likely formula, plain-language reason |
 | `select_elements` | `symbols[]` | Set the table selection, arm the stage |
 | `combine_selection` | `stoichiometry?` | Resolve the selection to a compound via PubChem |
 | `search_pubchem` | `query`, `by` | Resolve a name / formula / SMILES / InChIKey to CIDs |
@@ -35,6 +44,8 @@ ChatGPT's in-app browser or Chrome with WebMCP enabled drives them the same way.
 | `assess_hazard_profile` | `cid` | GHS signal word, pictograms, hazard statements |
 | `find_similar_compounds` | `smiles`, `threshold` | 2D similarity search with a green-chemistry score |
 | `industrial_viability` | `cid` | Vendor and patent counts, sourcing verdict |
+| `industrial_uses` | `cid` | What the compound is used for, from PubChem Uses annotations |
+| `describe_compound` | `cid` | Plain-language description and common names |
 | `bioactivity_bridge` | `cid` | Active assay count, tested targets, pharmacology |
 | `substitute_and_compare` | `base_smiles`, `change` | Apply a substituent, report the property shift |
 | `build_to_constraints` | `goal`, `constraints` | Search, hazard-check, score and rank candidates |
@@ -65,10 +76,12 @@ function in `api/pug/`.
 
 - **ChatGPT in-app browser**, or **Chrome** with `chrome://flags/#enable-webmcp-testing`.
 - Open the page. The tools register on load (the dot by the wordmark turns on).
-- Ask your agent, for example: *"build a non-toxic polymer precursor using only period-2 elements"*, then *"how hazardous is it?"*, then *"find greener alternatives"*.
+- Ask your agent, for example: *"will sodium and chlorine bond?"*, *"make CO2"*, *"build a non-toxic polymer precursor using only period-2 elements"*, then *"how hazardous is it?"*, *"what is it used for?"*, *"find greener alternatives"*.
 - Or open the console and call the tools directly:
   ```js
-  await navigator.modelContext.callTool({ name: "search_pubchem", arguments: { query: "aspirin", by: "name" } });
+  const tools = await document.modelContext.getTools();
+  const t = tools.find(x => x.name === "predict_bond");
+  await document.modelContext.executeTool(t, JSON.stringify({ symbols: ["Na", "Cl"] }));
   ```
 
 ## Demo script
