@@ -9,3 +9,5 @@ dist
 # local working notes / decision log — never commit
 ADR.md
 .notes/
+
+.vercel
