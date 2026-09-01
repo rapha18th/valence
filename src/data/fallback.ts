@@ -30,7 +30,7 @@ export const FALLBACK: F[] = [
   { cid: 962, name: "Water", formula: "H2O", smiles: "O", weight: 18.015, tpsa: 1, xlogp: -0.5, hbd: 1, hba: 1, rotatable: 0, complexity: 0, aliases: ["water", "h2o", "ho", "oh", "dihydrogen monoxide"], sdf3d: SDF[962] },
   { cid: 280, name: "Carbon Dioxide", formula: "CO2", smiles: "C(=O)=O", weight: 44.009, tpsa: 34.1, xlogp: 0.8, hbd: 0, hba: 2, rotatable: 0, complexity: 18.3, aliases: ["carbon dioxide", "co2", "coo", "oco"], sdf3d: SDF[280] },
   { cid: 297, name: "Methane", formula: "CH4", smiles: "C", weight: 16.043, tpsa: 0, xlogp: 0.6, hbd: 0, hba: 0, rotatable: 0, complexity: 0, aliases: ["methane", "ch4"], sdf3d: SDF[297] },
-  { cid: 702, name: "Ethanol", formula: "C2H6O", smiles: "CCO", weight: 46.07, tpsa: 20.2, xlogp: -0.1, hbd: 1, hba: 1, rotatable: 0, complexity: 2.8, aliases: ["ethanol", "ethyl alcohol", "c2h6o", "alcohol", "cco"] },
+  { cid: 702, name: "Ethanol", formula: "C2H6O", smiles: "CCO", weight: 46.07, tpsa: 20.2, xlogp: -0.1, hbd: 1, hba: 1, rotatable: 0, complexity: 2.8, aliases: ["ethanol", "ethyl alcohol", "c2h6o", "alcohol", "cco", "drinking alcohol", "spirits", "surgical spirit", "denatured alcohol", "grain alcohol"] },
   { cid: 222, name: "Ammonia", formula: "H3N", smiles: "N", weight: 17.031, tpsa: 1, xlogp: -1.1, hbd: 1, hba: 1, rotatable: 0, complexity: 0, aliases: ["ammonia", "nh3", "h3n"], sdf3d: SDF[222] },
   { cid: 313, name: "Hydrochloric Acid", formula: "ClH", smiles: "Cl", weight: 36.46, tpsa: 0, xlogp: 0.3, hbd: 1, hba: 0, rotatable: 0, complexity: 0, aliases: ["hydrochloric acid", "hydrogen chloride", "hcl", "clh"], sdf3d: SDF[313] },
   { cid: 402, name: "Hydrogen Sulfide", formula: "H2S", smiles: "S", weight: 34.08, tpsa: 1, xlogp: 0.4, hbd: 1, hba: 0, rotatable: 0, complexity: 0, aliases: ["hydrogen sulfide", "h2s", "hs", "sh2"], sdf3d: SDF[402] },
@@ -55,7 +55,7 @@ export const FALLBACK: F[] = [
   { cid: 1983, name: "Acetaminophen", formula: "C8H9NO2", smiles: "CC(=O)Nc1ccc(O)cc1", weight: 151.16, tpsa: 49.3, xlogp: 0.5, hbd: 2, hba: 2, rotatable: 1, complexity: 139, aliases: ["acetaminophen", "paracetamol", "tylenol", "c8h9no2"] },
 
   // common solvents
-  { cid: 180, name: "Acetone", formula: "C3H6O", smiles: "CC(=O)C", weight: 58.08, tpsa: 17.1, xlogp: -0.2, hbd: 0, hba: 1, rotatable: 0, complexity: 26.3, aliases: ["acetone", "propan-2-one", "c3h6o"] },
+  { cid: 180, name: "Acetone", formula: "C3H6O", smiles: "CC(=O)C", weight: 58.08, tpsa: 17.1, xlogp: -0.2, hbd: 0, hba: 1, rotatable: 0, complexity: 26.3, aliases: ["acetone", "propan-2-one", "nail polish remover", "propanone", "c3h6o"] },
   { cid: 887, name: "Methanol", formula: "CH4O", smiles: "CO", weight: 32.04, tpsa: 20.2, xlogp: -0.5, hbd: 1, hba: 1, rotatable: 0, complexity: 2, aliases: ["methanol", "methyl alcohol", "ch4o", "co"] },
   { cid: 3776, name: "Isopropyl Alcohol", formula: "C3H8O", smiles: "CC(C)O", weight: 60.10, tpsa: 20.2, xlogp: 0.1, hbd: 1, hba: 1, rotatable: 0, complexity: 15.2, aliases: ["isopropanol", "isopropyl alcohol", "2-propanol", "rubbing alcohol", "c3h8o"] },
   { cid: 8857, name: "Ethyl Acetate", formula: "C4H8O2", smiles: "CCOC(C)=O", weight: 88.11, tpsa: 26.3, xlogp: 0.7, hbd: 0, hba: 2, rotatable: 2, complexity: 47.1, aliases: ["ethyl acetate", "c4h8o2"] },
@@ -74,7 +74,7 @@ export const FALLBACK: F[] = [
   { cid: 284, name: "Formic Acid", formula: "CH2O2", smiles: "C(=O)O", weight: 46.03, tpsa: 37.3, xlogp: -0.2, hbd: 1, hba: 2, rotatable: 0, complexity: 10.3, aliases: ["formic acid", "methanoic acid", "ch2o2"] },
   { cid: 753, name: "Glycerol", formula: "C3H8O3", smiles: "OCC(O)CO", weight: 92.09, tpsa: 60.7, xlogp: -1.8, hbd: 3, hba: 3, rotatable: 2, complexity: 25.8, aliases: ["glycerol", "glycerine", "propane-1,2,3-triol", "c3h8o3"] },
   { cid: 1176, name: "Urea", formula: "CH4N2O", smiles: "C(=O)(N)N", weight: 60.06, tpsa: 69.1, xlogp: -2.1, hbd: 2, hba: 1, rotatable: 0, complexity: 24.2, aliases: ["urea", "carbamide", "ch4n2o"] },
-  { cid: 5988, name: "Sucrose", formula: "C12H22O11", smiles: "OCC1OC(O)(COC2OC(CO)C(O)C(O)C2O)C(O)C1O", weight: 342.30, tpsa: 190, xlogp: -3.7, hbd: 8, hba: 11, rotatable: 5, complexity: 458, aliases: ["sucrose", "table sugar", "saccharose", "c12h22o11"] },
+  { cid: 5988, name: "Sucrose", formula: "C12H22O11", smiles: "OCC1OC(O)(COC2OC(CO)C(O)C(O)C2O)C(O)C1O", weight: 342.30, tpsa: 190, xlogp: -3.7, hbd: 8, hba: 11, rotatable: 5, complexity: 458, aliases: ["sucrose", "sugar", "table sugar", "cane sugar", "saccharose", "c12h22o11"] },
   { cid: 784, name: "Hydrogen Peroxide", formula: "H2O2", smiles: "OO", weight: 34.01, tpsa: 40.5, xlogp: -1.4, hbd: 2, hba: 2, rotatable: 0, complexity: 2, aliases: ["hydrogen peroxide", "h2o2", "oo"] },
   { cid: 977, name: "Oxygen", formula: "O2", smiles: "O=O", weight: 32.00, tpsa: 34.1, xlogp: null, hbd: 0, hba: 2, rotatable: 0, complexity: 2, aliases: ["oxygen", "dioxygen", "o2"] },
   { cid: 947, name: "Nitrogen", formula: "N2", smiles: "N#N", weight: 28.01, tpsa: 23.8, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 6, aliases: ["nitrogen", "dinitrogen", "n2"] },
@@ -99,7 +99,7 @@ export const FALLBACK: F[] = [
   { cid: 224478, name: "Lithium Fluoride", formula: "FLi", smiles: "[Li+].[F-]", weight: 25.94, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["lithium fluoride", "lif", "fli"] },
   { cid: 14798, name: "Sodium Hydroxide", formula: "NaOH", smiles: "[OH-].[Na+]", weight: 40.00, tpsa: 1, xlogp: null, hbd: 1, hba: 1, rotatable: 0, complexity: 2, aliases: ["sodium hydroxide", "lye", "caustic soda", "naoh", "hnao"] },
   { cid: 14797, name: "Potassium Hydroxide", formula: "KOH", smiles: "[OH-].[K+]", weight: 56.11, tpsa: 1, xlogp: null, hbd: 1, hba: 1, rotatable: 0, complexity: 2, aliases: ["potassium hydroxide", "caustic potash", "koh", "hko"] },
-  { cid: 10112, name: "Calcium Carbonate", formula: "CCaO3", smiles: "C(=O)([O-])[O-].[Ca+2]", weight: 100.09, tpsa: 63.2, xlogp: null, hbd: 0, hba: 3, rotatable: 0, complexity: 18, aliases: ["calcium carbonate", "limestone", "calcite", "caco3", "ccao3"] },
+  { cid: 10112, name: "Calcium Carbonate", formula: "CCaO3", smiles: "C(=O)([O-])[O-].[Ca+2]", weight: 100.09, tpsa: 63.2, xlogp: null, hbd: 0, hba: 3, rotatable: 0, complexity: 18, aliases: ["calcium carbonate", "limestone", "calcite", "chalk", "antacid", "caco3", "ccao3"] },
   { cid: 1119, name: "Sulfur Dioxide", formula: "O2S", smiles: "O=S=O", weight: 64.07, tpsa: 34.8, xlogp: 0.2, hbd: 0, hba: 2, rotatable: 0, complexity: 18.3, aliases: ["sulfur dioxide", "sulphur dioxide", "so2", "o2s"] },
   { cid: 24682, name: "Sulfur Trioxide", formula: "O3S", smiles: "O=S(=O)=O", weight: 80.06, tpsa: 52.2, xlogp: null, hbd: 0, hba: 3, rotatable: 0, complexity: 40.7, aliases: ["sulfur trioxide", "sulphur trioxide", "so3", "o3s"] },
   { cid: 281, name: "Carbon Monoxide", formula: "CO", smiles: "[C-]#[O+]", weight: 28.01, tpsa: 17.1, xlogp: null, hbd: 0, hba: 1, rotatable: 0, complexity: 10, aliases: ["carbon monoxide", "co"] },
@@ -107,6 +107,19 @@ export const FALLBACK: F[] = [
   { cid: 24524, name: "Fluorine", formula: "F2", smiles: "FF", weight: 38.00, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["fluorine", "difluorine", "f2"] },
   { cid: 24526, name: "Chlorine", formula: "Cl2", smiles: "ClCl", weight: 70.90, tpsa: 0, xlogp: null, hbd: 0, hba: 0, rotatable: 0, complexity: 2, aliases: ["chlorine", "dichlorine", "cl2"] },
   { cid: 14917, name: "Hydrogen Fluoride", formula: "FH", smiles: "F", weight: 20.01, tpsa: 0, xlogp: null, hbd: 1, hba: 0, rotatable: 0, complexity: 2, aliases: ["hydrogen fluoride", "hydrofluoric acid", "hf", "fh"] },
+
+  // things people actually have under the sink or in the pantry
+  { cid: 176, name: "Acetic Acid", formula: "C2H4O2", smiles: "CC(=O)O", weight: 60.05, tpsa: 37.3, xlogp: -0.2, hbd: 1, hba: 2, rotatable: 0, complexity: 31.3, aliases: ["acetic acid", "vinegar", "white vinegar", "ethanoic acid", "glacial acetic acid", "c2h4o2"] },
+  { cid: 516892, name: "Sodium Bicarbonate", formula: "CHNaO3", smiles: "C(=O)(O)[O-].[Na+]", weight: 84.01, tpsa: 60.4, xlogp: null, hbd: 1, hba: 3, rotatable: 0, complexity: 26.8, aliases: ["sodium bicarbonate", "baking soda", "bicarbonate of soda", "sodium hydrogen carbonate", "nahco3", "chnao3"] },
+  { cid: 10340, name: "Sodium Carbonate", formula: "CNa2O3", smiles: "C(=O)([O-])[O-].[Na+].[Na+]", weight: 105.99, tpsa: 63.2, xlogp: null, hbd: 0, hba: 3, rotatable: 0, complexity: 18.9, aliases: ["sodium carbonate", "washing soda", "soda ash", "na2co3", "cna2o3"] },
+  { cid: 23665760, name: "Sodium Hypochlorite", formula: "ClNaO", smiles: "[O-]Cl.[Na+]", weight: 74.44, tpsa: 23.6, xlogp: null, hbd: 0, hba: 1, rotatable: 0, complexity: 2, aliases: ["sodium hypochlorite", "bleach", "chlorine bleach", "liquid bleach", "naocl", "clnao"] },
+  { cid: 3423265, name: "Sodium Dodecyl Sulfate", formula: "C12H25NaO4S", smiles: "CCCCCCCCCCCCOS(=O)(=O)[O-].[Na+]", weight: 288.38, tpsa: 74.8, xlogp: null, hbd: 0, hba: 4, rotatable: 12, complexity: 216, aliases: ["sodium dodecyl sulfate", "sodium lauryl sulfate", "sls", "sds", "sodium laurilsulfate", "detergent", "surfactant"] },
+  { cid: 1030, name: "Propylene Glycol", formula: "C3H8O2", smiles: "CC(CO)O", weight: 76.09, tpsa: 40.5, xlogp: -0.9, hbd: 2, hba: 2, rotatable: 1, complexity: 16.3, aliases: ["propylene glycol", "propane-1,2-diol", "1,2-propanediol", "mpg", "e1520", "c3h8o2"] },
+  { cid: 54670067, name: "Ascorbic Acid", formula: "C6H8O6", smiles: "C(C(C1C(=C(C(=O)O1)O)O)O)O", weight: 176.12, tpsa: 107, xlogp: -1.6, hbd: 4, hba: 6, rotatable: 2, complexity: 232, aliases: ["ascorbic acid", "vitamin c", "l-ascorbic acid", "e300", "c6h8o6"] },
+  { cid: 14791, name: "Magnesium Hydroxide", formula: "H2MgO2", smiles: "[OH-].[OH-].[Mg+2]", weight: 58.32, tpsa: 2, xlogp: null, hbd: 2, hba: 2, rotatable: 0, complexity: 2, aliases: ["magnesium hydroxide", "milk of magnesia", "brucite", "mgoh2", "h2mgo2"] },
+  { cid: 931, name: "Naphthalene", formula: "C10H8", smiles: "c1ccc2ccccc2c1", weight: 128.17, tpsa: 0, xlogp: 3.3, hbd: 0, hba: 0, rotatable: 0, complexity: 105, aliases: ["naphthalene", "mothballs", "moth balls", "tar camphor", "c10h8"] },
+  { cid: 7628, name: "Boric Acid", formula: "BH3O3", smiles: "OB(O)O", weight: 61.83, tpsa: 60.7, xlogp: null, hbd: 3, hba: 3, rotatable: 0, complexity: 1.7, aliases: ["boric acid", "boracic acid", "hydrogen borate", "roach killer", "bh3o3"] },
+  { cid: 24504, name: "Calcium Hypochlorite", formula: "CaCl2O2", smiles: "[O-]Cl.[O-]Cl.[Ca+2]", weight: 142.98, tpsa: 40.1, xlogp: null, hbd: 0, hba: 2, rotatable: 0, complexity: 4, aliases: ["calcium hypochlorite", "pool chlorine", "bleaching powder", "cacl2o2"] },
 ];
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();

@@ -1,5 +1,5 @@
 import { el, clear, fmt } from "../lib/dom.ts";
-import { getState, subscribe, setStage, setComparison, setRecovery } from "../store/store.ts";
+import { getState, subscribe, setStage, setSdf3d, setComparison, setRecovery } from "../store/store.ts";
 import { sfx } from "../lib/sound.ts";
 import { drawStructureSvg } from "../lib/structure2d.ts";
 import * as ops from "../webmcp/ops.ts";
@@ -98,24 +98,33 @@ export function mountStage(root: HTMLElement) {
   root.append(stage);
 
   let viewer: any = null;
+  let viewerPromise: Promise<any> | null = null;
   let lastSmiles = "";
   let lastSdf = "";
   let lastTheme = getState().theme;
 
-  async function ensureViewer() {
-    if (viewer) return viewer;
-    const mod: any = await import("3dmol").catch(() => import("3dmol/build/3Dmol.js" as any));
-    const $3Dmol = mod.createViewer ? mod : (mod.default ?? mod);
-    viewer = $3Dmol.createViewer(holder3d, {
-      backgroundColor: "black",
-      backgroundOpacity: 0,
-      antialias: true,
-    });
-    const ro = new ResizeObserver(() => {
-      if (viewer) { try { viewer.resize(); viewer.render(); } catch { /* ignore */ } }
-    });
-    ro.observe(holder3d);
-    return viewer;
+  // Single-flight: two draw3d calls that race in before the 3Dmol chunk loads
+  // must not each create their own viewer on the same div (the classic
+  // "3D stuck" — updates land on an orphaned canvas).
+  function ensureViewer(): Promise<any> {
+    if (viewer) return Promise.resolve(viewer);
+    if (viewerPromise) return viewerPromise;
+    viewerPromise = (async () => {
+      const mod: any = await import("3dmol").catch(() => import("3dmol/build/3Dmol.js" as any));
+      const $3Dmol = mod.createViewer ? mod : (mod.default ?? mod);
+      const v = $3Dmol.createViewer(holder3d, {
+        backgroundColor: "black",
+        backgroundOpacity: 0,
+        antialias: true,
+      });
+      const ro = new ResizeObserver(() => {
+        if (viewer) { try { viewer.resize(); viewer.render(); } catch { /* ignore */ } }
+      });
+      ro.observe(holder3d);
+      viewer = v;
+      return v;
+    })();
+    return viewerPromise;
   }
 
   function toggleSpin(btn: HTMLElement) {
@@ -167,20 +176,37 @@ export function mountStage(root: HTMLElement) {
   async function draw3d(sdf: string) {
     if (!sdf || sdf === lastSdf) return;
     lastSdf = sdf;
-    const v = await ensureViewer();
-    v.clear();
-    v.addModel(sdf, "sdf");
-    v.setStyle({}, {
-      stick: { radius: 0.16, colorscheme: "Jmol" },
-      sphere: { scale: 0.30, colorscheme: "Jmol" },
-    });
-    v.zoomTo();
-    v.render();
-    v.zoom(1.6, 500);
-    applyLabels();
-    // the scene may have been zero-height at create time; force a resize once
-    setTimeout(() => { try { v.resize(); v.zoomTo(); v.zoom(1.6); v.render(); applyLabels(); } catch { /* ignore */ } }, 120);
-    sfx.confirm();
+    let v: any;
+    try {
+      v = await ensureViewer();
+    } catch (e) {
+      console.warn("3Dmol failed to load", e);
+      lastSdf = "";
+      setSdf3d(null); // fall back to the 2D structure rather than a blank stage
+      return;
+    }
+    // a newer draw3d call superseded us while the chunk was loading
+    if (sdf !== lastSdf) return;
+    try {
+      v.clear();
+      v.removeAllModels?.();
+      v.addModel(sdf, "sdf");
+      v.setStyle({}, {
+        stick: { radius: 0.16, colorscheme: "Jmol" },
+        sphere: { scale: 0.30, colorscheme: "Jmol" },
+      });
+      v.zoomTo();
+      v.render();
+      v.zoom(1.6, 500);
+      applyLabels();
+      // the scene may have been zero-height at create time; force a resize once
+      setTimeout(() => { try { v.resize(); v.zoomTo(); v.zoom(1.6); v.render(); applyLabels(); } catch { /* ignore */ } }, 120);
+      sfx.confirm();
+    } catch (e) {
+      console.warn("3Dmol render failed", e);
+      lastSdf = "";
+      setSdf3d(null);
+    }
   }
 
   function renderProps(p: MoleculeProps | null) {
