@@ -206,11 +206,6 @@ export function mountStage(root: HTMLElement) {
     }
   }
 
-  function paneStructure(canvasEl: SVGSVGElement, side: CompareSide) {
-    if (side.props.smiles) {
-      drawStructureSvg(side.props.smiles, canvasEl, getState().theme === "light" ? "light" : "dark");
-    }
-  }
   const cmpProps = (p: MoleculeProps) =>
     `<span>MW <b>${fmt(p.weight, 2)}</b></span>` +
     `<span>TPSA <b>${fmt(p.tpsa, 1)}</b></span>` +
@@ -218,46 +213,94 @@ export function mountStage(root: HTMLElement) {
     `<span>HBD/HBA <b>${fmt(p.hbd, 0)}/${fmt(p.hba, 0)}</b></span>` +
     `<span>rot. bonds <b>${fmt(p.rotatable, 0)}</b></span>`;
 
-  function renderCmpView() {
-    const c = getState().comparison;
-    if (!c) { cmp.hidden = true; return; }
-    cmp.hidden = false;
-    clear(cmp);
+  // compare view: built once per comparison, then 2D<->3D is just a toggle
+  let cmpKey = "";
+  let cmpMode: "2d" | "3d" = "2d";
+  const cmpPanes: { viz: HTMLElement; svg: SVGSVGElement; holder: HTMLElement; viewer: any; loaded: boolean; side: CompareSide }[] = [];
 
-    const head = el("div", { class: "stage__cmp-head" }, [
-      el("span", { class: "stage__cmp-title", text: `${c.a.props.name}  vs  ${c.b.props.name}` }),
-    ]);
+  function teardownCmp() {
+    for (const p of cmpPanes) { try { p.viewer?.clear?.(); } catch { /* ignore */ } }
+    cmpPanes.length = 0;
+    cmpKey = "";
+  }
+
+  async function loadCmp3d(pane: typeof cmpPanes[number]) {
+    if (pane.loaded) { pane.viewer?.resize?.(); pane.viewer?.render?.(); return; }
+    pane.loaded = true;
+    const mod: any = await import("3dmol").catch(() => import("3dmol/build/3Dmol.js" as any));
+    const $3Dmol = mod.createViewer ? mod : (mod.default ?? mod);
+    const v = $3Dmol.createViewer(pane.holder, { backgroundColor: "black", backgroundOpacity: 0, antialias: true });
+    pane.viewer = v;
+    const { get3dSdf } = await import("../pubchem/parse.ts");
+    const { sdf } = await get3dSdf(pane.side.props.cid);
+    if (!sdf) { pane.holder.innerHTML = '<div class="stage__cmp-3dnote">no 3D geometry</div>'; return; }
+    v.addModel(sdf, "sdf");
+    v.setStyle({}, { stick: { radius: 0.16, colorscheme: "Jmol" }, sphere: { scale: 0.30, colorscheme: "Jmol" } });
+    v.zoomTo(); v.render(); v.zoom(1.5, 400);
+    try {
+      v.addPropertyLabels("elem", { not: { elem: ["C", "H"] } }, {
+        fontSize: 11, fontColor: "#f3f1ec", backgroundColor: "#000", backgroundOpacity: 0.35, borderThickness: 0, inFront: true,
+      });
+      v.render();
+    } catch { /* ignore */ }
+    setTimeout(() => { try { v.resize(); v.zoomTo(); v.zoom(1.5); v.render(); } catch { /* ignore */ } }, 120);
+  }
+
+  function applyCmpMode() {
+    for (const p of cmpPanes) {
+      p.svg.style.display = cmpMode === "2d" ? "" : "none";
+      p.holder.style.display = cmpMode === "3d" ? "" : "none";
+      if (cmpMode === "3d") void loadCmp3d(p);
+    }
+  }
+
+  function buildCmpView(c: NonNullable<ReturnType<typeof getState>["comparison"]>) {
+    clear(cmp);
+    teardownCmp();
+    cmpKey = `${c.a.props.cid}|${c.b.props.cid}`;
+
+    const t2 = el("button", { class: "chip", "aria-pressed": String(cmpMode === "2d"), text: "2D" });
+    const t3 = el("button", { class: "chip", "aria-pressed": String(cmpMode === "3d"), text: "3D" });
+    t2.addEventListener("click", () => { cmpMode = "2d"; t2.setAttribute("aria-pressed", "true"); t3.setAttribute("aria-pressed", "false"); applyCmpMode(); });
+    t3.addEventListener("click", () => { cmpMode = "3d"; t3.setAttribute("aria-pressed", "true"); t2.setAttribute("aria-pressed", "false"); applyCmpMode(); });
     const close = el("button", { class: "chip", "aria-label": "Close comparison", text: "✕ close" });
     close.addEventListener("click", () => setComparison(null));
-    head.append(close);
+    const head = el("div", { class: "stage__cmp-head" }, [
+      el("span", { class: "stage__cmp-title", text: `${c.a.props.name}  vs  ${c.b.props.name}` }),
+      el("div", { class: "stage__cmp-toggle" }, [t2, t3]),
+      close,
+    ]);
 
     const grid = el("div", { class: "stage__cmp-grid" });
     for (const [label, side] of [["A", c.a], ["B", c.b]] as const) {
       const p = side.props;
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg") as SVGSVGElement;
-      svg.setAttribute("viewBox", "0 0 360 300");
+      svg.setAttribute("viewBox", "0 0 300 300");
       svg.setAttribute("class", "stage__cmp-svg");
-      paneStructure(svg, side);
-      const pane = el("div", { class: "stage__cmp-pane" }, [
+      if (p.smiles) drawStructureSvg(p.smiles, svg, getState().theme === "light" ? "light" : "dark");
+      const holder = el("div", { class: "stage__cmp-3d", style: "display:none" });
+      const viz = el("div", { class: "stage__cmp-viz" }, [svg, holder]);
+      cmpPanes.push({ viz, svg, holder, viewer: null, loaded: false, side });
+
+      grid.append(el("div", { class: "stage__cmp-pane" }, [
         el("div", { class: "stage__cmp-tag", text: label }),
         el("b", { class: "stage__cmp-name", text: p.name }),
         el("span", { class: "stage__cmp-formula", text: `${p.formula} · CID ${p.cid}` }),
-        svg,
+        viz,
         el("div", { class: "stage__cmp-props", html: cmpProps(p) }),
         side.description
           ? el("p", { class: "stage__cmp-desc", text: side.description.length > 260 ? side.description.slice(0, 257) + "…" : side.description })
           : el("p", { class: "stage__cmp-desc stage__cmp-desc--muted", text: "No PubChem description on file." }),
-      ]);
-      grid.append(pane);
+      ]));
     }
 
     const a = c.a.props, b = c.b.props;
-    const delta = (x: number | null, y: number | null, unit = "") => {
+    const delta = (x: number | null, y: number | null) => {
       if (x == null || y == null) return `<span class="d0">—</span>`;
       const dd = y - x;
       const cls = dd > 0 ? "dup" : dd < 0 ? "ddn" : "d0";
       const v = Number.isInteger(dd) ? dd : dd.toFixed(1);
-      return `<span class="${cls}">${dd >= 0 ? "+" : ""}${v}${unit}</span>`;
+      return `<span class="${cls}">${dd >= 0 ? "+" : ""}${v}</span>`;
     };
     const diff = el("div", { class: "stage__cmp-diff", html:
       `<span class="k">Δ&nbsp;B−A</span>` +
@@ -270,6 +313,15 @@ export function mountStage(root: HTMLElement) {
     });
 
     cmp.append(head, grid, diff);
+    applyCmpMode();
+  }
+
+  function renderCmpView() {
+    const c = getState().comparison;
+    if (!c) { cmp.hidden = true; if (cmpKey) teardownCmp(); return; }
+    cmp.hidden = false;
+    const key = `${c.a.props.cid}|${c.b.props.cid}`;
+    if (key !== cmpKey) buildCmpView(c);
   }
 
   function render() {
@@ -285,7 +337,16 @@ export function mountStage(root: HTMLElement) {
     t3d.setAttribute("aria-pressed", String(s.stageMode === "3d"));
     t3d.toggleAttribute("disabled", !s.sdf3d);
     renderCmpView();
-    if (comparing) { clear(title); return; }
+    if (comparing) {
+      clear(title);
+      if (s.theme !== lastTheme) {
+        lastTheme = s.theme;
+        for (const p of cmpPanes) if (p.side.props.smiles) {
+          drawStructureSvg(p.side.props.smiles, p.svg, s.theme === "light" ? "light" : "dark");
+        }
+      }
+      return;
+    }
 
     clear(title);
     if (s.props) {
