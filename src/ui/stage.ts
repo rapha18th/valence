@@ -170,7 +170,9 @@ export function mountStage(root: HTMLElement) {
         `font-family="var(--font-mono)" font-size="11">structure not available offline</text>`;
       return;
     }
-    drawStructureSvg(p.smiles, svg2d as SVGSVGElement, getState().theme === "light" ? "light" : "dark");
+    // the stage is a dark screen in both app themes, so the structure always
+    // uses the dark palette (light text, light-blue cations) for contrast.
+    drawStructureSvg(p.smiles, svg2d as SVGSVGElement, "dark");
   }
 
   async function draw3d(sdf: string) {
@@ -374,7 +376,7 @@ export function mountStage(root: HTMLElement) {
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg") as SVGSVGElement;
       svg.setAttribute("viewBox", "0 0 300 300");
       svg.setAttribute("class", "stage__cmp-svg");
-      if (p.smiles) drawStructureSvg(p.smiles, svg, getState().theme === "light" ? "light" : "dark");
+      if (p.smiles) drawStructureSvg(p.smiles, svg, "dark");
       const holder = el("div", { class: "stage__cmp-3d", style: "display:none" });
       const viz = el("div", { class: "stage__cmp-viz" }, [svg, holder]);
       cmpPanes.push({ viz, svg, holder, viewer: null, loaded: false, side });
@@ -437,12 +439,9 @@ export function mountStage(root: HTMLElement) {
     renderCmpView();
     if (comparing) {
       clear(title);
-      if (s.theme !== lastTheme) {
-        lastTheme = s.theme;
-        for (const p of cmpPanes) if (p.side.props.smiles) {
-          drawStructureSvg(p.side.props.smiles, p.svg, s.theme === "light" ? "light" : "dark");
-        }
-      }
+      // the compare structures are always drawn on the dark screen palette;
+      // nothing to redraw on an app-theme change.
+      if (s.theme !== lastTheme) lastTheme = s.theme;
       return;
     }
 

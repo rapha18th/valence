@@ -3,6 +3,32 @@ import SmilesDrawer from "smiles-drawer";
 // smiles-drawer v2 renders reliably into an <svg> element. We draw there and,
 // when a raster is needed (the recipe card), serialise the SVG to an image.
 
+// Metal atoms (the cations in an ionic structure) aren't in smiles-drawer's
+// default palette, so they fall back to the carbon colour and disappear
+// against the dark stage. Give every metal an explicit light blue so the
+// positive ion reads at a glance, in both themes.
+const METALS = [
+  "Li", "Na", "K", "Rb", "Cs", "Fr",
+  "Be", "Mg", "Ca", "Sr", "Ba", "Ra",
+  "Al", "Ga", "In", "Sn", "Tl", "Pb", "Bi",
+  "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn",
+  "Y", "Zr", "Nb", "Mo", "Ag", "Cd",
+  "La", "Hf", "Ta", "W", "Pt", "Au", "Hg",
+];
+const metalColors = (hex: string) =>
+  Object.fromEntries(METALS.map((m) => [m.toUpperCase(), hex]));
+
+const BASE_DARK = {
+  FOREGROUND: "#ffffff", BACKGROUND: "#141414", C: "#ffffff", O: "#e74c3c",
+  N: "#3498db", F: "#27ae60", CL: "#16a085", BR: "#d35400", I: "#8e44ad",
+  P: "#d35400", S: "#f1c40f", B: "#e67e22", SI: "#e67e22", H: "#aaaaaa",
+};
+const BASE_LIGHT = {
+  FOREGROUND: "#222222", BACKGROUND: "#ffffff", C: "#222222", O: "#e74c3c",
+  N: "#3498db", F: "#27ae60", CL: "#16a085", BR: "#d35400", I: "#8e44ad",
+  P: "#d35400", S: "#f1c40f", B: "#e67e22", SI: "#e67e22", H: "#666666",
+};
+
 const svgDrawer = new SmilesDrawer.SvgDrawer({
   padding: 26,
   bondThickness: 1.2,
@@ -10,6 +36,10 @@ const svgDrawer = new SmilesDrawer.SvgDrawer({
   atomVisualization: "default",
   compactDrawing: false,
   explicitHydrogens: false,
+  themes: {
+    dark: { ...BASE_DARK, ...metalColors("#8ab4ff") },
+    light: { ...BASE_LIGHT, ...metalColors("#2563c9") },
+  },
 });
 
 export function drawStructureSvg(smiles: string, svg: SVGSVGElement, theme: "light" | "dark") {
