@@ -42,36 +42,59 @@ and `explain` are the teaching tools; the periodic table works with the mouse or
 One page, no server. Person and agent act on one observable store; the WebMCP tool layer is
 the only thing that talks to PubChem, with a bundled offline set for when PubChem rate-limits.
 
-### Tool surface
+### The 23 tools
+
+All registered on `document.modelContext`. Every property and hazard reading carries its
+provenance (PubChem live, PubChem cached, bundled reference, or "not checked") with a fetch
+timestamp.
+
+**Selection and bonding** (offline, no network)
 
 | Tool | Input | Effect |
 |---|---|---|
-| `predict_bond` | `symbols[]` | Offline: will these elements bond, and why? Bond type, likely formula, plain-language reason |
 | `select_elements` | `symbols[]` | Set the table selection, arm the stage |
-| `combine_selection` | `stoichiometry?` | Resolve the selection to a compound via PubChem |
+| `predict_bond` | `symbols[]` | Will these elements bond, and why? Bond type, likely formula, plain-language reason from electronegativity and valence |
+| `combine_selection` | `stoichiometry?` | Resolve the current selection to a real compound and stage it |
+
+**PubChem lookup**
+
+| Tool | Input | Effect |
+|---|---|---|
 | `search_pubchem` | `query`, `by` | Resolve a name / formula / SMILES / InChIKey to CIDs |
 | `fetch_properties` | `cid` | MW, TPSA, logP, H-bond donors/acceptors, rotatable bonds |
 | `fetch_3d_conformer` | `cid` | Fetch an SDF and render a ball-and-stick model |
-| `assess_hazard_profile` | `cid` | GHS signal word, pictograms, hazard statements — stated as evidence, never as an absolute |
+| `assess_hazard_profile` | `cid` | GHS signal word, pictograms, hazard statements, stated as evidence |
+| `describe_compound` | `cid` | Plain-language description and common names |
+| `industrial_uses` | `cid` | What the compound is used for, from PubChem Uses annotations |
+| `industrial_viability` | `cid` | Vendor and patent counts, sourcing verdict |
+| `bioactivity_bridge` | `cid` | Active assay count, tested targets, pharmacology |
+
+**Design and comparison**
+
+| Tool | Input | Effect |
+|---|---|---|
 | `find_similar_compounds` | `smiles`, `threshold` | 2D similarity search with a green-chemistry score |
 | `compare_compounds` | `a`, `b` | Put two compounds side by side on the canvas: structures, property deltas, descriptions |
 | `close_comparison` | — | Leave the side-by-side view |
-| `industrial_viability` | `cid` | Vendor and patent counts, sourcing verdict |
-| `industrial_uses` | `cid` | What the compound is used for, from PubChem Uses annotations |
-| `describe_compound` | `cid` | Plain-language description and common names |
-| `bioactivity_bridge` | `cid` | Active assay count, tested targets, pharmacology |
 | `substitute_and_compare` | `base_smiles`, `change` | Apply a substituent, report the property shift |
-| `build_to_constraints` | `goal`, `constraints` | Start an async job: resolve, de-duplicate, hazard-check and score candidates, rank, stage the winner |
-| `get_build_status` | `jobId?` | Poll a build job: phase, progress, and the ranked candidates with each score's breakdown and rejection reason |
-| `cancel_build` | `jobId?` | Stop a running build; it commits whatever it has fully ranked, never a half-scored state |
 | `propose_greener_alternatives` | `cid_or_smiles` | Rank similar compounds by a transparent green score |
-| `render_recipe_card` | — | Export the build as a PNG card |
+
+**Constraint solve** (async job)
+
+| Tool | Input | Effect |
+|---|---|---|
+| `build_to_constraints` | `goal`, `constraints` | Start a job: resolve, de-duplicate, hazard-check and score candidates, rank, stage the winner |
+| `get_build_status` | `jobId?` | Poll a build: phase, progress, and the ranked candidates with each score's breakdown and rejection reason |
+| `cancel_build` | `jobId?` | Stop a running build; it commits whatever it has fully ranked |
+
+**Utility**
+
+| Tool | Input | Effect |
+|---|---|---|
+| `render_recipe_card` | — | Export the build as a downloadable PNG card |
 | `explain` | `topic` | Teach mode: explain a concept the bench uses |
 | `get_canvas_state` | — | Full bench state as JSON, provenance included |
 | `reset_canvas` | — | Clear the selection and the stage |
-
-Every property and hazard reading carries its provenance — PubChem live, PubChem cached,
-bundled reference, or "not checked — source unavailable" — with a fetch timestamp.
 
 ---
 
